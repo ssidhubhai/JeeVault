@@ -1,0 +1,68 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+    
+    // User Validator
+    function isValidUser() {
+      return request.resource.data.uid == request.auth.uid &&
+             request.resource.data.email is string;
+    }
+
+    // Question Validator
+    function isValidQuestion() {
+      let data = request.resource.data;
+      return data.id is string &&
+             data.userId == request.auth.uid &&
+             data.imageBase64 is string &&
+             data.subject is string &&
+             data.chapter is string &&
+             data.timestamp is number &&
+             (!('isSolved' in data) || data.isSolved is bool) &&
+             (!('tags' in data) || data.tags is list) &&
+             (!('notes' in data) || data.notes is string) &&
+             (!('isUncategorized' in data) || data.isUncategorized is bool);
+    }
+
+    // PdfSession Validator
+    function isValidPdfSession() {
+      let data = request.resource.data;
+      return data.id is string &&
+             data.userId == request.auth.uid &&
+             data.fileName is string &&
+             data.fileType is string &&
+             data.pageNumber is number &&
+             data.scale is number &&
+             data.theme is string &&
+             data.timerMinutes is number &&
+             data.timeLeft is number &&
+             (!('fileUrl' in data) || data.fileUrl is string) &&
+             (!('lastOpened' in data) || data.lastOpened is number);
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser();
+      allow update: if isOwner(userId) && isValidUser();
+      
+      match /questions/{questionId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidQuestion();
+      }
+      
+      match /pdf_sessions/{sessionId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidPdfSession();
+      }
+    }
+  }
+}

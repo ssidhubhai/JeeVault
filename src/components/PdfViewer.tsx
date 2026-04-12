@@ -1,0 +1,708 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Upload, Moon, Sun, Coffee, Book, Play, Pause, RotateCcw, Settings, Maximize2, Minimize2, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Timer, X, Clock, Trash2 } from 'lucide-react';
+import { Document, Page, pdfjs } from 'react-pdf';
+import 'react-pdf/dist/Page/AnnotationLayer.css';
+import 'react-pdf/dist/Page/TextLayer.css';
+import { cn } from '../lib/utils';
+import { savePdfSession, getPdfSession, getAllPdfSessions, clearPdfSession, PdfSession } from '../lib/db';
+
+// Initialize PDF.js worker
+pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+
+type Theme = 'normal' | 'dark' | 'sepia' | 'warm';
+
+export function PdfViewer() {
+  const [file, setFile] = useState<File | null>(null);
+  const [numPages, setNumPages] = useState<number>(0);
+  const [pageNumber, setPageNumber] = useState<number>(1);
+  const [scale, setScale] = useState<number>(1.2);
+  
+  const [theme, setTheme] = useState<Theme>('normal');
+  const [isDragging, setIsDragging] = useState(false);
+  const [isZenMode, setIsZenMode] = useState(false);
+  const [isFitToWidth, setIsFitToWidth] = useState(false);
+
+  const handleFitToWidth = () => {
+    if (!scrollContainerRef.current) return;
+    // Assuming a standard A4 page is roughly 595.28 points wide
+    // We get the container width, subtract some padding, and calculate the scale
+    const containerWidth = scrollContainerRef.current.clientWidth;
+    const padding = 64; // 32px padding on each side (p-8)
+    const availableWidth = containerWidth - padding;
+    
+    // A standard PDF page width is around 600px at scale 1
+    const newScale = availableWidth / 600;
+    
+    setScale(Math.min(Math.max(newScale, 0.5), 3));
+    setIsFitToWidth(true);
+  };
+
+  // Reset fit to width if user manually zooms
+  useEffect(() => {
+    setIsFitToWidth(false);
+  }, [scale]);
+  const [pageInput, setPageInput] = useState<string>('1');
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isLoadingSession, setIsLoadingSession] = useState(true);
+  const [recentSessions, setRecentSessions] = useState<PdfSession[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  
+  // Timer State
+  const [timerMinutes, setTimerMinutes] = useState(60);
+  const [timeLeft, setTimeLeft] = useState(60 * 60);
+  const [isTimerRunning, setIsTimerRunning] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const pageRefs = useRef<(HTMLDivElement | null)[]>([]);
+
+  // Load session on mount
+  useEffect(() => {
+    const loadSessions = async () => {
+      try {
+        const sessions = await getAllPdfSessions();
+        // Sort descending by lastOpened
+        sessions.sort((a, b) => (b.lastOpened || 0) - (a.lastOpened || 0));
+        setRecentSessions(sessions);
+      } catch (error) {
+        console.error('Failed to load PDF sessions:', error);
+      } finally {
+        setIsLoadingSession(false);
+      }
+    };
+    loadSessions();
+  }, []);
+
+  const initialPageRef = useRef<number>(1);
+
+  const loadPdfSession = async (session: PdfSession) => {
+    try {
+      setIsLoadingSession(true);
+      const fullSession = await getPdfSession(session.id);
+      if (fullSession && fullSession.fileData) {
+        const blob = new Blob([fullSession.fileData], { type: fullSession.fileType });
+        const restoredFile = new File([blob], fullSession.fileName, { type: fullSession.fileType });
+        setFile(restoredFile);
+        setPageNumber(fullSession.pageNumber);
+        initialPageRef.current = fullSession.pageNumber;
+        setPageInput(fullSession.pageNumber.toString());
+        setScale(fullSession.scale || 1.2);
+        setTheme(fullSession.theme as Theme || 'normal');
+        setTimerMinutes(fullSession.timerMinutes || 60);
+        setTimeLeft(fullSession.timeLeft || 60 * 60);
+        setCurrentSessionId(fullSession.id);
+      }
+    } catch (error) {
+      console.error('Failed to load PDF session:', error);
+    } finally {
+      setIsLoadingSession(false);
+    }
+  };
+
+  const handleDeleteSession = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    try {
+      await clearPdfSession(id);
+      setRecentSessions(prev => prev.filter(s => s.id !== id));
+    } catch (error) {
+      console.error('Failed to delete session:', error);
+    }
+  };
+
+  // Save session on changes
+  useEffect(() => {
+    if (!file || !currentSessionId) return;
+    
+    const saveSession = async () => {
+      try {
+        const existingSession = await getPdfSession(currentSessionId);
+        let fileData = existingSession?.fileData;
+        
+        if (!fileData || existingSession?.fileName !== file.name) {
+          fileData = await file.arrayBuffer();
+        }
+
+        const session: PdfSession = {
+          id: currentSessionId,
+          fileData,
+          fileName: file.name,
+          fileType: file.type,
+          pageNumber,
+          scale,
+          theme,
+          timerMinutes,
+          timeLeft,
+          lastOpened: Date.now()
+        };
+        await savePdfSession(session);
+      } catch (error) {
+        console.error('Failed to save PDF session:', error);
+      }
+    };
+    
+    const timeoutId = setTimeout(saveSession, 1000);
+    return () => clearTimeout(timeoutId);
+  }, [file, pageNumber, scale, theme, timerMinutes, timeLeft, currentSessionId]);
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (isTimerRunning && timeLeft > 0) {
+      interval = setInterval(() => {
+        setTimeLeft(prev => {
+          if (prev <= 1) {
+            setIsTimerRunning(false);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isTimerRunning]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!file) return;
+      
+      // Zoom
+      if (e.ctrlKey && e.key === '=') {
+        e.preventDefault();
+        setScale(prev => Math.min(prev + 0.2, 3));
+      } else if (e.ctrlKey && e.key === '-') {
+        e.preventDefault();
+        setScale(prev => Math.max(prev - 0.2, 0.5));
+      }
+
+      // Alt + T: Toggle Timer
+      if (e.altKey && e.key.toLowerCase() === 't') {
+        e.preventDefault();
+        setIsTimerRunning(prev => !prev);
+      }
+      // Alt + R: Reset Timer
+      if (e.altKey && e.key.toLowerCase() === 'r') {
+        e.preventDefault();
+        setTimeLeft(timerMinutes * 60);
+        setIsTimerRunning(false);
+      }
+      // Alt + D: Toggle Dark Mode
+      if (e.altKey && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        setTheme(prev => prev === 'dark' ? 'normal' : 'dark');
+      }
+      // Alt + Z: Toggle Zen Mode
+      if (e.altKey && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        setIsZenMode(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [file, timerMinutes]);
+
+  // Ctrl + Scroll to Zoom
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    
+    const handleWheel = (e: WheelEvent) => {
+      if (e.ctrlKey) {
+        e.preventDefault();
+        setScale(prev => {
+          const delta = e.deltaY < 0 ? 0.1 : -0.1;
+          return Math.min(Math.max(prev + delta, 0.5), 3);
+        });
+      }
+    };
+    
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    return () => container.removeEventListener('wheel', handleWheel);
+  }, [file]);
+
+  // Intersection Observer for Page Number
+  useEffect(() => {
+    if (!file || numPages === 0) return;
+    
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            const pageIndex = Number(entry.target.getAttribute('data-page-number'));
+            if (pageIndex) {
+              setPageNumber(pageIndex);
+              setPageInput(pageIndex.toString());
+            }
+          }
+        });
+      },
+      { 
+        root: scrollContainerRef.current, 
+        rootMargin: "-40% 0px -40% 0px" 
+      }
+    );
+
+    pageRefs.current.forEach(ref => {
+      if (ref) observer.observe(ref);
+    });
+
+    return () => observer.disconnect();
+  }, [file, numPages, scale]);
+
+  const scrollToPage = (page: number) => {
+    const pageNode = pageRefs.current[page - 1];
+    if (pageNode && scrollContainerRef.current) {
+      pageNode.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setPageNumber(page);
+      setPageInput(page.toString());
+    }
+  };
+
+  const handlePageSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const page = parseInt(pageInput);
+    if (!isNaN(page) && page >= 1 && page <= numPages) {
+      scrollToPage(page);
+    } else {
+      setPageInput(pageNumber.toString());
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = e.target.files?.[0];
+    if (selectedFile && selectedFile.type === 'application/pdf') {
+      setFile(selectedFile);
+      setPageNumber(1);
+      setCurrentSessionId(selectedFile.name + '_' + selectedFile.size);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const droppedFile = e.dataTransfer.files?.[0];
+    if (droppedFile && droppedFile.type === 'application/pdf') {
+      setFile(droppedFile);
+      setPageNumber(1);
+      setCurrentSessionId(droppedFile.name + '_' + droppedFile.size);
+    }
+  };
+
+  const onDocumentLoadSuccess = React.useCallback(({ numPages }: { numPages: number }) => {
+    setNumPages(numPages);
+    // Use a slight delay to ensure the container is ready for scrolling
+    setTimeout(() => {
+      if (initialPageRef.current > 1) {
+        scrollToPage(initialPageRef.current);
+      }
+    }, 300);
+  }, []);
+
+  const formatTime = (seconds: number) => {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const getThemeFilter = () => {
+    switch (theme) {
+      case 'dark': return 'invert(1) hue-rotate(180deg) contrast(100%) brightness(100%)';
+      case 'sepia': return 'sepia(1) brightness(0.9) contrast(0.9)';
+      case 'warm': return 'sepia(0.4) hue-rotate(-15deg) brightness(0.95)';
+      default: return 'none';
+    }
+  };
+
+  const setPresetTimer = (minutes: number) => {
+    setTimerMinutes(minutes);
+    setTimeLeft(minutes * 60);
+    setIsSettingsOpen(false);
+    setIsTimerRunning(false);
+  };
+
+  const pdfContent = React.useMemo(() => (
+    <Document
+      file={file}
+      onLoadSuccess={onDocumentLoadSuccess}
+      loading={
+        <div className="flex items-center justify-center h-64 text-neutral-400">
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+            <p>Loading PDF...</p>
+          </div>
+        </div>
+      }
+      error={
+        <div className="flex items-center justify-center h-64 text-red-400 bg-red-950/20 px-8 rounded-xl border border-red-900/50">
+          Failed to load PDF. Please try another file.
+        </div>
+      }
+    >
+      {Array.from(new Array(numPages), (el, index) => (
+        <div 
+          key={`page_${index + 1}`} 
+          ref={el => pageRefs.current[index] = el}
+          data-page-number={index + 1}
+          className="mb-8 shadow-2xl bg-white"
+        >
+          <Page 
+            pageNumber={index + 1} 
+            scale={scale} 
+            devicePixelRatio={Math.min(2, window.devicePixelRatio)}
+            renderTextLayer={true}
+            renderAnnotationLayer={true}
+            className="bg-white"
+            loading={<div className="h-[800px] w-[600px] bg-white/5 animate-pulse" />}
+          />
+        </div>
+      ))}
+    </Document>
+  ), [file, numPages, scale, onDocumentLoadSuccess]);
+
+  if (isLoadingSession) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-neutral-50 dark:bg-neutral-950">
+        <div className="text-neutral-400 flex flex-col items-center gap-4">
+          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+          <p>Loading recent PDFs...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!file) {
+    return (
+      <div className="flex-1 flex flex-col h-full bg-neutral-50 dark:bg-neutral-950 p-6 overflow-y-auto">
+        <header className="mb-8">
+          <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+            <Book className="w-6 h-6 text-blue-500" />
+            Focus PDF Reader
+          </h2>
+          <p className="text-sm text-neutral-500 dark:text-neutral-400">Eye-friendly PDF viewer with built-in timer. No more Chrome blocks.</p>
+        </header>
+
+        <div className="max-w-4xl mx-auto w-full flex flex-col gap-8">
+          <div 
+            onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={handleDrop}
+            onClick={() => fileInputRef.current?.click()}
+            className={cn(
+              "border-2 border-dashed rounded-2xl flex flex-col items-center justify-center cursor-pointer transition-all duration-200 py-16",
+              isDragging 
+                ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20" 
+                : "border-neutral-300 dark:border-neutral-800 hover:border-neutral-400 dark:hover:border-neutral-700 bg-white dark:bg-neutral-900/50"
+            )}
+          >
+            <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center mb-4">
+              <Upload className="w-8 h-8" />
+            </div>
+            <h3 className="text-xl font-semibold mb-2">Drop your PDF here</h3>
+            <p className="text-neutral-500 text-sm mb-6">or click to browse files</p>
+            
+            <div className="flex gap-4 text-xs text-neutral-400">
+              <span className="flex items-center gap-1"><Moon className="w-3 h-3" /> Dark Mode</span>
+              <span className="flex items-center gap-1"><Maximize2 className="w-3 h-3" /> Zen Mode</span>
+              <span className="flex items-center gap-1"><Timer className="w-3 h-3" /> Pomodoro Timer</span>
+            </div>
+            
+            <input 
+              type="file" 
+              accept="application/pdf" 
+              className="hidden" 
+              ref={fileInputRef}
+              onChange={handleFileChange}
+            />
+          </div>
+
+          {recentSessions.length > 0 && (
+            <div>
+              <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                <Clock className="w-5 h-5 text-neutral-400" />
+                Recent PDFs
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {recentSessions.map(session => (
+                  <div 
+                    key={session.id}
+                    className="group relative bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl p-4 hover:border-blue-500 dark:hover:border-blue-500 transition-colors cursor-pointer flex flex-col"
+                    onClick={() => loadPdfSession(session)}
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <Book className="w-5 h-5 text-blue-500 shrink-0" />
+                      <button 
+                        onClick={(e) => handleDeleteSession(e, session.id)}
+                        className="opacity-0 group-hover:opacity-100 p-1 text-neutral-400 hover:text-red-500 transition-all rounded"
+                        title="Remove from history"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <h4 className="font-medium text-sm line-clamp-2 mb-1" title={session.fileName}>
+                      {session.fileName}
+                    </h4>
+                    <div className="mt-auto pt-3 flex items-center justify-between text-xs text-neutral-500">
+                      <span>Page {session.pageNumber}</span>
+                      {session.lastOpened && (
+                        <span>{new Date(session.lastOpened).toLocaleDateString()}</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn(
+      "flex flex-col bg-neutral-900 relative overflow-hidden transition-all duration-300",
+      isZenMode ? "fixed inset-0 z-50" : "flex-1 h-full"
+    )}>
+      {/* Top Toolbar */}
+      <div className="h-14 bg-neutral-950 border-b border-neutral-800 flex items-center justify-between px-4 shrink-0 z-10 shadow-md">
+        <div className="flex items-center gap-4">
+          <button 
+            onClick={() => {
+              setFile(null);
+              setCurrentSessionId(null);
+              // Refresh recent sessions list
+              getAllPdfSessions().then(sessions => {
+                sessions.sort((a, b) => (b.lastOpened || 0) - (a.lastOpened || 0));
+                setRecentSessions(sessions);
+              });
+            }}
+            className="text-sm font-medium text-neutral-400 hover:text-white transition-colors"
+          >
+            Close PDF
+          </button>
+          
+          <div className="h-4 w-px bg-neutral-800" />
+          
+          {/* Pagination Controls */}
+          <div className="flex items-center gap-2 bg-neutral-900 p-1 rounded-lg border border-neutral-800">
+            <button 
+              onClick={() => scrollToPage(Math.max(pageNumber - 1, 1))}
+              disabled={pageNumber <= 1}
+              className="p-1 text-neutral-400 hover:text-white disabled:opacity-30 transition-colors"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <form onSubmit={handlePageSubmit} className="flex items-center">
+              <input 
+                type="text" 
+                value={pageInput}
+                onChange={(e) => setPageInput(e.target.value)}
+                onBlur={handlePageSubmit}
+                className="w-10 bg-neutral-950 border border-neutral-700 rounded px-1 py-0.5 text-xs text-center text-white focus:outline-none focus:border-blue-500"
+              />
+              <span className="text-xs font-medium text-neutral-400 ml-1 min-w-[2rem]">
+                / {numPages || '-'}
+              </span>
+            </form>
+            <button 
+              onClick={() => scrollToPage(Math.min(pageNumber + 1, numPages))}
+              disabled={pageNumber >= numPages}
+              className="p-1 text-neutral-400 hover:text-white disabled:opacity-30 transition-colors"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="h-4 w-px bg-neutral-800" />
+
+          {/* Zoom Controls */}
+          <div className="flex items-center gap-1 bg-neutral-900 p-1 rounded-lg border border-neutral-800">
+            <button onClick={() => setScale(prev => Math.max(prev - 0.2, 0.5))} className="p-1 text-neutral-400 hover:text-white">
+              <ZoomOut className="w-4 h-4" />
+            </button>
+            <span className="text-xs font-medium text-neutral-400 w-10 text-center">{Math.round(scale * 100)}%</span>
+            <button onClick={() => setScale(prev => Math.min(prev + 0.2, 3))} className="p-1 text-neutral-400 hover:text-white">
+              <ZoomIn className="w-4 h-4" />
+            </button>
+            <div className="w-px h-4 bg-neutral-800 mx-1" />
+            <button 
+              onClick={handleFitToWidth} 
+              className={cn(
+                "p-1.5 rounded transition-colors text-xs font-medium",
+                isFitToWidth ? "bg-neutral-800 text-white" : "text-neutral-400 hover:text-white"
+              )}
+              title="Fit to Width"
+            >
+              Fit
+            </button>
+          </div>
+
+          <div className="h-4 w-px bg-neutral-800" />
+
+          {/* Theme Controls */}
+          <div className="flex items-center gap-1 bg-neutral-900 p-1 rounded-lg border border-neutral-800">
+            <button 
+              onClick={() => setTheme('normal')}
+              className={cn("p-1.5 rounded-md transition-colors", theme === 'normal' ? "bg-neutral-800 text-white" : "text-neutral-400 hover:text-white")}
+              title="Normal (White)"
+            >
+              <Sun className="w-4 h-4" />
+            </button>
+            <button 
+              onClick={() => setTheme('dark')}
+              className={cn("p-1.5 rounded-md transition-colors", theme === 'dark' ? "bg-neutral-800 text-white" : "text-neutral-400 hover:text-white")}
+              title="Dark Mode (Alt+D)"
+            >
+              <Moon className="w-4 h-4" />
+            </button>
+            <button 
+              onClick={() => setTheme('sepia')}
+              className={cn("p-1.5 rounded-md transition-colors", theme === 'sepia' ? "bg-neutral-800 text-amber-400" : "text-neutral-400 hover:text-amber-400")}
+              title="Sepia"
+            >
+              <Coffee className="w-4 h-4" />
+            </button>
+            <button 
+              onClick={() => setTheme('warm')}
+              className={cn("p-1.5 rounded-md transition-colors", theme === 'warm' ? "bg-neutral-800 text-orange-400" : "text-neutral-400 hover:text-orange-400")}
+              title="Warm"
+            >
+              <Sun className="w-4 h-4 text-orange-400" />
+            </button>
+          </div>
+        </div>
+
+        {/* Right Side: Timer & Zen Mode */}
+        <div className="flex items-center gap-3 relative">
+          <div className="flex items-center gap-2 bg-neutral-900 p-1 rounded-lg border border-neutral-800">
+            <div className={cn(
+              "px-3 py-1 font-mono text-lg font-bold tracking-wider",
+              timeLeft < 300 ? "text-red-500" : "text-white"
+            )}>
+              {formatTime(timeLeft)}
+            </div>
+            <div className="w-px h-4 bg-neutral-800 mx-1" />
+            <button 
+              onClick={() => setIsTimerRunning(!isTimerRunning)}
+              className="p-1.5 text-neutral-400 hover:text-white transition-colors"
+              title="Play/Pause (Alt+T)"
+            >
+              {isTimerRunning ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+            </button>
+            <button 
+              onClick={() => {
+                setTimeLeft(timerMinutes * 60);
+                setIsTimerRunning(false);
+              }}
+              className="p-1.5 text-neutral-400 hover:text-white transition-colors"
+              title="Reset (Alt+R)"
+            >
+              <RotateCcw className="w-4 h-4" />
+            </button>
+            <button 
+              onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+              className={cn(
+                "p-1.5 transition-colors",
+                isSettingsOpen ? "text-white bg-neutral-800 rounded" : "text-neutral-400 hover:text-white"
+              )}
+              title="Settings"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Settings Panel */}
+          {isSettingsOpen && (
+            <div className="absolute top-12 right-0 z-50 w-64 bg-neutral-900 border border-neutral-700 rounded-xl shadow-2xl p-4 flex flex-col gap-4">
+              <div className="flex items-center justify-between border-b border-neutral-800 pb-2">
+                <h3 className="text-sm font-bold text-white">Viewer Settings</h3>
+                <button onClick={() => setIsSettingsOpen(false)} className="text-neutral-400 hover:text-white">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="text-xs text-neutral-400 block mb-1">Default Zoom</label>
+                  <div className="flex items-center gap-2">
+                    <input 
+                      type="range" 
+                      min="50" max="300" step="10" 
+                      value={scale * 100}
+                      onChange={(e) => setScale(parseInt(e.target.value) / 100)}
+                      className="flex-1 accent-blue-500"
+                    />
+                    <span className="text-xs text-neutral-300 w-8">{Math.round(scale * 100)}%</span>
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="text-xs text-neutral-400 block mb-1">Theme</label>
+                  <select 
+                    value={theme} 
+                    onChange={(e) => setTheme(e.target.value as Theme)}
+                    className="w-full bg-neutral-950 border border-neutral-700 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="normal">Normal (White)</option>
+                    <option value="dark">Dark Mode</option>
+                    <option value="sepia">Sepia</option>
+                    <option value="warm">Warm</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs text-neutral-400 block mb-1">Timer Duration (min)</label>
+                  <div className="flex gap-2 mb-2">
+                    <button onClick={() => setPresetTimer(25)} className="flex-1 py-1 text-xs bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded transition-colors">25m</button>
+                    <button onClick={() => setPresetTimer(50)} className="flex-1 py-1 text-xs bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded transition-colors">50m</button>
+                    <button onClick={() => setPresetTimer(60)} className="flex-1 py-1 text-xs bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded transition-colors">60m</button>
+                  </div>
+                  <input 
+                    type="number" 
+                    value={timerMinutes}
+                    onChange={(e) => {
+                      const val = Math.max(1, parseInt(e.target.value) || 1);
+                      setTimerMinutes(val);
+                      setTimeLeft(val * 60);
+                      setIsTimerRunning(false);
+                    }}
+                    className="w-full bg-neutral-950 border border-neutral-700 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="h-4 w-px bg-neutral-800" />
+
+          <button
+            onClick={() => setIsZenMode(!isZenMode)}
+            className={cn(
+              "p-2 rounded-lg transition-colors flex items-center gap-2 text-sm font-medium",
+              isZenMode ? "bg-blue-600 text-white" : "bg-neutral-900 text-neutral-400 hover:text-white border border-neutral-800"
+            )}
+            title="Zen Mode (Alt+Z)"
+          >
+            {isZenMode ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            {isZenMode ? "Exit Zen" : "Zen Mode"}
+          </button>
+        </div>
+      </div>
+
+      {/* PDF Container */}
+      <div 
+        ref={scrollContainerRef}
+        className="flex-1 relative bg-[#1e1e1e] overflow-y-auto flex flex-col items-center p-8"
+      >
+        <div 
+          className="transition-all duration-300"
+          style={{ filter: getThemeFilter() }}
+        >
+          {pdfContent}
+        </div>
+      </div>
+    </div>
+  );
+}

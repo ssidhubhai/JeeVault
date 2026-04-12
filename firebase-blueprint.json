@@ -1,0 +1,72 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the application",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "createdAt": { "type": "timestamp" }
+      },
+      "required": ["uid", "email"]
+    },
+    "Question": {
+      "title": "Question",
+      "description": "A saved question with its metadata",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "imageBase64": { "type": "string" },
+        "subject": { "type": "string" },
+        "chapter": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "isSolved": { "type": "boolean" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "notes": { "type": "string" },
+        "timeTaken": { "type": "number" },
+        "confidence": { "type": "string", "enum": ["High", "Medium", "Low"] },
+        "nextReviewDate": { "type": "number" },
+        "reviewStage": { "type": "number" },
+        "isUncategorized": { "type": "boolean" }
+      },
+      "required": ["id", "userId", "imageBase64", "subject", "chapter", "timestamp"]
+    },
+    "PdfSession": {
+      "title": "PdfSession",
+      "description": "A saved PDF reading session",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "fileData": { "type": "string", "description": "Base64 encoded PDF data" },
+        "fileName": { "type": "string" },
+        "fileType": { "type": "string" },
+        "pageNumber": { "type": "number" },
+        "scale": { "type": "number" },
+        "theme": { "type": "string" },
+        "timerMinutes": { "type": "number" },
+        "timeLeft": { "type": "number" },
+        "lastOpened": { "type": "number" }
+      },
+      "required": ["id", "userId", "fileData", "fileName", "fileType", "pageNumber", "scale", "theme", "timerMinutes", "timeLeft"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles"
+    },
+    "/users/{userId}/questions/{questionId}": {
+      "schema": { "$ref": "#/entities/Question" },
+      "description": "Questions saved by the user"
+    },
+    "/users/{userId}/pdf_sessions/{sessionId}": {
+      "schema": { "$ref": "#/entities/PdfSession" },
+      "description": "PDF sessions saved by the user"
+    }
+  }
+}
