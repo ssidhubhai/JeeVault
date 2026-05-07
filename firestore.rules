@@ -49,6 +49,41 @@ service cloud.firestore {
              (!('lastOpened' in data) || data.lastOpened is number);
     }
 
+    // Mistake Validator
+    function isValidMistake() {
+      let data = request.resource.data;
+      return data.id is string &&
+             data.userId == request.auth.uid &&
+             data.text is string &&
+             data.timestamp is number &&
+             (!('subject' in data) || data.subject is string);
+    }
+    
+    // Test Validator
+    function isValidTest() {
+      let data = request.resource.data;
+      return data.id is string &&
+             data.userId == request.auth.uid &&
+             data.name is string &&
+             data.timestamp is number &&
+             data.type is string &&
+             data.category is string &&
+             data.score is number &&
+             data.maxScore is number &&
+             (!('percentile' in data) || data.percentile is number) &&
+             (!('rank' in data) || data.rank is number) &&
+             data.physics is map &&
+             data.chemistry is map &&
+             data.maths is map &&
+             data.questions is list;
+    }
+
+    // Setting Validator
+    function isValidSetting() {
+      let data = request.resource.data;
+      return (!('tags' in data) || data.tags is list);
+    }
+
     match /users/{userId} {
       allow read: if isOwner(userId);
       allow create: if isOwner(userId) && isValidUser();
@@ -62,6 +97,21 @@ service cloud.firestore {
       match /pdf_sessions/{sessionId} {
         allow read, delete: if isOwner(userId);
         allow create, update: if isOwner(userId) && isValidPdfSession();
+      }
+
+      match /mistakes/{mistakeId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidMistake();
+      }
+
+      match /tests/{testId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidTest();
+      }
+
+      match /settings/{settingId} {
+        allow read, delete: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidSetting();
       }
     }
   }

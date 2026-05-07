@@ -4,9 +4,9 @@ import { Subject } from '../App';
 import { JEE_SYLLABUS, QUICK_TAGS } from '../lib/constants';
 import { toast } from 'react-hot-toast';
 import { Trash2, Tag as TagIcon, ChevronLeft, ChevronRight } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { cn, compressImageBase64 } from '../lib/utils';
 
-export function Inbox({ refreshTrigger, onRefresh }: { refreshTrigger: number, onRefresh: () => void }) {
+export function Inbox({ refreshTrigger, onRefresh, availableTags = QUICK_TAGS }: { refreshTrigger: number, onRefresh: () => void, availableTags?: string[] }) {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [activeTab, setActiveTab] = useState<Subject>('Physics');
@@ -20,6 +20,43 @@ export function Inbox({ refreshTrigger, onRefresh }: { refreshTrigger: number, o
   const [notes, setNotes] = useState('');
 
   const [viewMode, setViewMode] = useState<'grid' | 'detail'>('grid');
+
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const toggleSelectionMode = () => {
+    setIsSelectionMode(!isSelectionMode);
+    setSelectedIds(new Set());
+  };
+
+  const toggleSelectDump = (id: string) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedIds(next);
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    if (!window.confirm(`Move ${selectedIds.size} dumps to recycle bin?`)) return;
+    try {
+      for (const id of selectedIds) {
+        await deleteQuestion(id);
+      }
+      toast.success(`Moved ${selectedIds.size} dumps to Recycle Bin`);
+      setSelectedIds(new Set());
+      setIsSelectionMode(false);
+      onRefresh();
+    } catch {
+      toast.error('Failed to bulk delete');
+    }
+  };
+
+  const handleBulkCategorize = () => {
+    if (selectedIds.size > 0) {
+      setViewMode('detail');
+    }
+  };
 
   useEffect(() => {
     const loadInbox = async () => {
@@ -42,25 +79,39 @@ export function Inbox({ refreshTrigger, onRefresh }: { refreshTrigger: number, o
   });
 
   const handleSave = async () => {
-    const q = viewMode === 'detail' ? filteredQuestions[currentIndex] : null;
-    if (!q || isSaving) return;
+    const qList = viewMode === 'detail' && isSelectionMode && selectedIds.size > 0 
+      ? filteredQuestions.filter(q => selectedIds.has(q.id))
+      : viewMode === 'detail' ? [filteredQuestions[currentIndex]] : [];
+      
+    if (qList.length === 0 || isSaving) return;
 
     setIsSaving(true);
     try {
-      await updateQuestion({
-        ...q,
-        subject,
-        chapter,
-        tags,
-        notes,
-        isUncategorized: false,
-      });
-      toast.success('Categorized & Uploaded to Cloud!');
+      for (const q of qList) {
+        // Clean up any old invalid schemas from local DB
+        const sanitizedQ = {
+          id: q.id,
+          imageBase64: await compressImageBase64(q.imageBase64),
+          timestamp: q.timestamp || (q as any).createdAt || Date.now(),
+          subject,
+          chapter,
+          tags,
+          notes,
+          isUncategorized: false,
+          reviewStage: q.reviewStage || 0,
+          nextReviewDate: q.nextReviewDate || Date.now() + 24 * 60 * 60 * 1000,
+        };
+        await updateQuestion(sanitizedQ as any);
+      }
+      toast.success(qList.length > 1 ? `Categorized ${qList.length} items!` : 'Categorized & Uploaded to Cloud!');
       setTags([]);
       setNotes('');
+      if (isSelectionMode) {
+        setIsSelectionMode(false);
+        setSelectedIds(new Set());
+      }
       onRefresh();
-      // If no more questions in this filter, go back to grid
-      if (filteredQuestions.length <= 1) {
+      if (filteredQuestions.length - qList.length <= 0) {
         setViewMode('grid');
       }
     } catch (error) {
@@ -181,6 +232,36 @@ export function Inbox({ refreshTrigger, onRefresh }: { refreshTrigger: number, o
             ))}
           </div>
         )}
+        
+        {viewMode === 'grid' && filteredQuestions.length > 0 && (
+          <div className="flex items-center justify-between mt-4">
+            <button
+              onClick={toggleSelectionMode}
+              className={cn(
+                "text-sm font-medium transition-colors",
+                isSelectionMode ? "text-blue-600 dark:text-blue-400" : "text-neutral-500 hover:text-neutral-700 dark:text-neutral-400"
+              )}
+            >
+              {isSelectionMode ? 'Cancel Selection' : 'Select items'}
+            </button>
+            {isSelectionMode && selectedIds.size > 0 && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleBulkDelete}
+                  className="px-3 py-1.5 text-xs font-bold bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition-colors"
+                >
+                  Delete Selected ({selectedIds.size})
+                </button>
+                <button
+                  onClick={handleBulkCategorize}
+                  className="px-3 py-1.5 text-xs font-bold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Categorize ({selectedIds.size})
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </header>
 
       {filteredQuestions.length === 0 ? (
@@ -198,24 +279,43 @@ export function Inbox({ refreshTrigger, onRefresh }: { refreshTrigger: number, o
               <div 
                 key={q.id}
                 onClick={() => {
-                  setCurrentIndex(idx);
-                  setViewMode('detail');
+                  if (isSelectionMode) {
+                    toggleSelectDump(q.id);
+                  } else {
+                    setCurrentIndex(idx);
+                    setViewMode('detail');
+                  }
                 }}
-                className="group relative aspect-square bg-white dark:bg-neutral-900 rounded-xl border border-neutral-200 dark:border-neutral-800 overflow-hidden cursor-pointer hover:border-blue-500 transition-all shadow-sm hover:shadow-md"
+                className={cn(
+                  "group relative aspect-square bg-white dark:bg-neutral-900 rounded-xl border overflow-hidden cursor-pointer transition-all shadow-sm",
+                  isSelectionMode && selectedIds.has(q.id) 
+                    ? "border-blue-500 ring-2 ring-blue-500/50" 
+                    : "border-neutral-200 dark:border-neutral-800 hover:border-blue-500 hover:shadow-md"
+                )}
               >
                 <img src={q.imageBase64} className="w-full h-full object-cover" alt="Dump" />
-                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                  <span className="px-3 py-1.5 bg-white text-neutral-900 text-xs font-bold rounded-lg shadow-lg">Categorize</span>
-                </div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDelete(q.id);
-                  }}
-                  className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
+                {!isSelectionMode && (
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <span className="px-3 py-1.5 bg-white text-neutral-900 text-xs font-bold rounded-lg shadow-lg">Categorize</span>
+                  </div>
+                )}
+                {isSelectionMode && (
+                  <div className="absolute top-2 left-2 w-5 h-5 rounded-full border-2 border-white shadow flex items-center justify-center"
+                       style={{ background: selectedIds.has(q.id) ? '#3b82f6' : 'rgba(0,0,0,0.3)' }}>
+                    {selectedIds.has(q.id) && <div className="w-2 h-2 bg-white rounded-full" />}
+                  </div>
+                )}
+                {!isSelectionMode && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDelete(q.id);
+                    }}
+                    className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
             ))}
           </div>
@@ -325,7 +425,7 @@ export function Inbox({ refreshTrigger, onRefresh }: { refreshTrigger: number, o
                 <TagIcon className="w-3 h-3" /> Tags
               </label>
               <div className="flex flex-wrap gap-2">
-                {QUICK_TAGS.map(tag => (
+                {availableTags.map(tag => (
                   <button
                     key={tag}
                     type="button"

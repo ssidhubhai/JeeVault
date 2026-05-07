@@ -53,12 +53,24 @@
         "lastOpened": { "type": "number" }
       },
       "required": ["id", "userId", "fileData", "fileName", "fileType", "pageNumber", "scale", "theme", "timerMinutes", "timeLeft"]
+    },
+    "Setting": {
+      "title": "Setting",
+      "description": "User specific settings",
+      "type": "object",
+      "properties": {
+        "tags": { "type": "array", "items": { "type": "string" } }
+      }
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": { "$ref": "#/entities/User" },
       "description": "User profiles"
+    },
+    "/users/{userId}/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/Setting" },
+      "description": "User settings such as tags"
     },
     "/users/{userId}/questions/{questionId}": {
       "schema": { "$ref": "#/entities/Question" },

@@ -1,9 +1,11 @@
 export const ERROR_TAGS = [
-  'Silly Mistake',
   'Calculation Error',
-  'Conceptual Error',
+  'Misread Question',
+  'Concept Gap',
+  'Silly Mistake',
   'Formula Forgotten',
   'Time Trap',
+  'New Concept Learnt',
   'Out of Syllabus'
 ];
 

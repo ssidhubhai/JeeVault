@@ -36,7 +36,7 @@ export interface Question {
 
 // --- Local DB Setup ---
 const DB_NAME = 'StudyAppLocal';
-const DB_VERSION = 3; // Bumped version for questionMetadata store
+const DB_VERSION = 7; // Bumped version for new stores
 
 let localDb: IDBPDatabase | null = null;
 
@@ -55,6 +55,18 @@ const getLocalDB = async () => {
       }
       if (!db.objectStoreNames.contains('questionMetadata')) {
         db.createObjectStore('questionMetadata', { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains('dailyPlans')) {
+        db.createObjectStore('dailyPlans', { keyPath: 'dateStr' });
+      }
+      if (!db.objectStoreNames.contains('syllabusProgress')) {
+        db.createObjectStore('syllabusProgress', { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains('mockTests')) {
+        db.createObjectStore('mockTests', { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains('mistakes')) {
+        db.createObjectStore('mistakes', { keyPath: 'id' });
       }
     },
   });
@@ -80,6 +92,94 @@ const dataURLtoBlob = (dataurl: string) => {
     u8arr[n] = bstr.charCodeAt(n);
   }
   return new Blob([u8arr], { type: mime });
+};
+
+export interface SubjectStat {
+  score: number;
+  percentile?: number;
+  correct: number;
+  incorrect: number;
+  skipped: number;
+}
+
+export interface QuestionStat {
+  id: string; // e.g., "P1-Q1" or "M-Q12"
+  subject: string; // "Physics", "Chemistry", "Mathematics"
+  status: 'Correct' | 'Incorrect' | 'Skipped' | 'Unmarked';
+}
+
+export interface TestSubmission {
+  id: string;
+  name: string;
+  timestamp: number;
+  type: 'JEE Mains' | 'JEE Advanced';
+  category: 'Regular Batch' | 'AITS' | 'Mock Test';
+  
+  score: number;
+  maxScore: number;
+  percentile?: number;
+  rank?: number;
+  testUrl?: string;
+  
+  physics: SubjectStat;
+  chemistry: SubjectStat;
+  maths: SubjectStat;
+  
+  questions: QuestionStat[];
+}
+
+// --- Settings ---
+export const getUserTags = async (): Promise<string[]> => {
+  try {
+    const uid = getUserId();
+    const docRef = doc(db, `users/${uid}/settings`, 'tags');
+    const snap = await getDoc(docRef);
+    if (snap.exists() && snap.data().tags) {
+      return snap.data().tags;
+    }
+  } catch (error) {
+    console.error("Error fetching tags:", error);
+  }
+  return []; // Return empty, we can fallback to QUICK_TAGS if empty in the UI
+};
+
+export const saveUserTags = async (tags: string[]) => {
+  const uid = getUserId();
+  const docRef = doc(db, `users/${uid}/settings`, 'tags');
+  await setDoc(docRef, { tags }, { merge: true });
+};
+
+// --- Test Analysis Logic ---
+export const addTestSubmission = async (test: TestSubmission) => {
+  const uid = getUserId();
+  const tData = { ...test, userId: uid };
+  await setDoc(doc(db, `users/${uid}/tests`, test.id), tData);
+};
+
+export const updateTestSubmission = async (test: TestSubmission) => {
+  const uid = getUserId();
+  const tData = { ...test, userId: uid };
+  await setDoc(doc(db, `users/${uid}/tests`, test.id), tData);
+};
+
+export const getTestSubmissions = async (): Promise<TestSubmission[]> => {
+  try {
+    const uid = getUserId();
+    const testsRef = collection(db, `users/${uid}/tests`);
+    const q = query(testsRef, orderBy('timestamp', 'desc'));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => doc.data() as TestSubmission);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('offline')) {
+      return [];
+    }
+    throw error;
+  }
+};
+
+export const deleteTestSubmission = async (id: string) => {
+  const uid = getUserId();
+  await deleteDoc(doc(db, `users/${uid}/tests`, id));
 };
 
 // --- PDF Sessions ---
@@ -386,4 +486,106 @@ export const getUniqueChaptersBySubject = async (subject: string): Promise<strin
   const querySnapshot = await getDocs(q);
   const chapters = new Set(querySnapshot.docs.map(doc => doc.data().chapter));
   return Array.from(chapters).sort();
+};
+
+export interface DailyTask {
+  id: string;
+  text: string;
+  completed: boolean;
+  missedReason?: string;
+  missedNotes?: string;
+}
+
+export interface DailyPlan {
+  dateStr: string; // 'YYYY-MM-DD' or 'tomorrow'
+  tasks: DailyTask[];
+  hoursStudied?: number;
+  notes?: string;
+  locked: boolean;
+}
+
+export const getDailyPlan = async (dateStr: string): Promise<DailyPlan | undefined> => {
+  const ldb = await getLocalDB();
+  return ldb.get('dailyPlans', dateStr);
+};
+
+export const saveDailyPlan = async (plan: DailyPlan): Promise<void> => {
+  const ldb = await getLocalDB();
+  await ldb.put('dailyPlans', plan);
+};
+
+export const getAllDailyPlans = async (): Promise<DailyPlan[]> => {
+  const ldb = await getLocalDB();
+  const plans = await ldb.getAll('dailyPlans');
+  return plans;
+};
+
+export interface ChapterProgress {
+  id: string; // "Subject_Chapter"
+  subject: string;
+  chapter: string;
+  lectures: boolean;
+  module: boolean;
+  mains: boolean;
+  adv: boolean;
+  notes: boolean;
+  revision: boolean;
+}
+
+export const getSyllabusProgress = async (): Promise<ChapterProgress[]> => {
+  const ldb = await getLocalDB();
+  return ldb.getAll('syllabusProgress');
+};
+
+export const saveChapterProgress = async (progress: ChapterProgress): Promise<void> => {
+  const ldb = await getLocalDB();
+  await ldb.put('syllabusProgress', progress);
+};
+
+export interface MockTestRecord {
+  id: string;
+  dateStr: string;
+  testName: string;
+  totalMarks: number;
+  positiveMarks: number;
+  negativeMarks: number;
+}
+
+export const getMockTests = async (): Promise<MockTestRecord[]> => {
+  const ldb = await getLocalDB();
+  const tests = await ldb.getAll('mockTests');
+  return tests.sort((a, b) => a.dateStr.localeCompare(b.dateStr));
+};
+
+export const saveMockTest = async (test: MockTestRecord): Promise<void> => {
+  const ldb = await getLocalDB();
+  await ldb.put('mockTests', test);
+};
+
+export interface MistakeRecord {
+  id: string;
+  source: string;
+  subject: string;
+  chapter: string;
+  mistakeText: string;
+  errorTypes: string[];
+  actionItem: string;
+  resolved: boolean;
+  timestamp: number;
+}
+
+export const getMistakes = async (): Promise<MistakeRecord[]> => {
+  const ldb = await getLocalDB();
+  const mistakes = await ldb.getAll('mistakes');
+  return mistakes.sort((a, b) => b.timestamp - a.timestamp);
+};
+
+export const saveMistake = async (mistake: MistakeRecord): Promise<void> => {
+  const ldb = await getLocalDB();
+  await ldb.put('mistakes', mistake);
+};
+
+export const deleteMistake = async (id: string): Promise<void> => {
+  const ldb = await getLocalDB();
+  await ldb.delete('mistakes', id);
 };

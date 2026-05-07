@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { BookOpen, FlaskConical, Calculator, ChevronRight, ChevronDown, Layers, Calendar, Inbox as InboxIcon, Timer, HardDrive, Trash2 } from 'lucide-react';
+import { BookOpen, FlaskConical, Calculator, ChevronRight, ChevronDown, Layers, Calendar, Inbox as InboxIcon, Timer, HardDrive, Trash2, Activity, Settings, PanelLeftClose, AlertOctagon } from 'lucide-react';
 import { Subject, ViewState } from '../App';
 import { getAllQuestionsMetadata, getRecycleBin, syncMetadata } from '../lib/db';
 import { cn } from '../lib/utils';
@@ -13,6 +13,7 @@ interface SidebarProps {
   onSelectSubject: (subject: Subject) => void;
   onSelectChapter: (chapter: string) => void;
   refreshTrigger: number;
+  onCloseDesktop?: () => void;
 }
 
 const SUBJECTS: { name: Subject; icon: React.ElementType; color: string; category?: string }[] = [
@@ -128,7 +129,7 @@ const SidebarSubjectSection: React.FC<SubjectSectionProps> = ({
   );
 }
 
-export function Sidebar({ currentView, onViewChange, selectedSubject, selectedChapter, onSelectSubject, onSelectChapter, refreshTrigger }: SidebarProps) {
+export function Sidebar({ currentView, onViewChange, selectedSubject, selectedChapter, onSelectSubject, onSelectChapter, refreshTrigger, onCloseDesktop }: SidebarProps) {
   const [expandedSubjects, setExpandedSubjects] = useState<Set<string>>(new Set(['Physics', 'Chemistry', 'Mathematics']));
   const [expandedClasses, setExpandedClasses] = useState<Set<string>>(new Set());
   const [chapterCounts, setChapterCounts] = useState<Record<string, { total: number, unsolved: number }>>({});
@@ -207,17 +208,28 @@ export function Sidebar({ currentView, onViewChange, selectedSubject, selectedCh
 
   return (
     <aside className="w-72 border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 flex flex-col h-full">
-      <div className="p-4 border-b border-neutral-200 dark:border-neutral-800">
-        <button 
-          onClick={() => onViewChange('dashboard')}
-          className="w-full text-left"
-        >
-          <h1 className="text-xl font-bold tracking-tight flex items-center gap-2 hover:opacity-80 transition-opacity">
-            <span className="bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 px-2 py-1 rounded text-sm">JEE</span>
-            Vault
-          </h1>
-        </button>
-        <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">Paste (Ctrl+V) anywhere to save</p>
+      <div className="p-4 border-b border-neutral-200 dark:border-neutral-800 flex justify-between items-start gap-2">
+        <div className="flex-1">
+          <button 
+            onClick={() => onViewChange('dashboard')}
+            className="w-full text-left"
+          >
+            <h1 className="text-xl font-bold tracking-tight flex items-center gap-2 hover:opacity-80 transition-opacity">
+              <span className="bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 px-2 py-1 rounded text-sm">JEE</span>
+              Vault
+            </h1>
+          </button>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1 truncate">Paste (Ctrl+V) anywhere to save</p>
+        </div>
+        {onCloseDesktop && (
+          <button 
+            onClick={onCloseDesktop} 
+            className="hidden md:flex p-1.5 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-md shrink-0 transition-colors"
+            title="Collapse Sidebar"
+          >
+            <PanelLeftClose className="w-5 h-5" />
+          </button>
+        )}
       </div>
 
       <div className="p-3 border-b border-neutral-200 dark:border-neutral-800 space-y-1">
@@ -232,6 +244,66 @@ export function Sidebar({ currentView, onViewChange, selectedSubject, selectedCh
         >
           <Layers className="w-4 h-4" />
           Dashboard
+        </button>
+        <button
+          onClick={() => onViewChange('planner')}
+          className={cn(
+            "w-full flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors",
+            currentView === 'planner' 
+              ? "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" 
+              : "text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800/50"
+          )}
+        >
+          <Calendar className="w-4 h-4" />
+          Daily Planner
+        </button>
+        <button
+          onClick={() => onViewChange('analytics')}
+          className={cn(
+            "w-full flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors",
+            currentView === 'analytics' 
+              ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300" 
+              : "text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800/50"
+          )}
+        >
+          <Activity className="w-4 h-4" />
+          Analytics & Weekly Review
+        </button>
+        <button
+          onClick={() => onViewChange('syllabus')}
+          className={cn(
+            "w-full flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors",
+            currentView === 'syllabus' 
+              ? "bg-orange-50 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300" 
+              : "text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800/50"
+          )}
+        >
+          <BookOpen className="w-4 h-4" />
+          Syllabus Tracker
+        </button>
+        <button
+          onClick={() => onViewChange('mistakes')}
+          className={cn(
+            "w-full flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors",
+            currentView === 'mistakes' 
+              ? "bg-rose-50 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300" 
+              : "text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800/50"
+          )}
+        >
+          <AlertOctagon className="w-4 h-4" />
+          The Mistake Book
+        </button>
+        <button
+          onClick={() => onViewChange('settings')}
+          className={cn(
+            "w-full flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors",
+            currentView === 'settings' 
+              ? "bg-neutral-200 text-neutral-900 dark:bg-neutral-800 dark:text-white" 
+              : "text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800/50"
+          )}
+        >
+          <Settings className="w-4 h-4" />
+          Settings
         </button>
         <button
           onClick={() => onViewChange('revise')}

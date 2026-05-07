@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Upload, Moon, Sun, Coffee, Book, Play, Pause, RotateCcw, Settings, Maximize2, Minimize2, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Timer, X, Clock, Trash2 } from 'lucide-react';
+import { Upload, Moon, Sun, Coffee, Book, Play, Pause, RotateCcw, Settings, Maximize2, Minimize2, ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Timer, X, Clock, Trash2, Scissors } from 'lucide-react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 import { cn } from '../lib/utils';
-import { savePdfSession, getPdfSession, getAllPdfSessions, clearPdfSession, PdfSession } from '../lib/db';
+import { savePdfSession, getPdfSession, getAllPdfSessions, clearPdfSession, PdfSession, addQuestion } from '../lib/db';
+import { toast } from 'react-hot-toast';
+import { toCanvas } from 'html-to-image';
 
 // Initialize PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -51,6 +53,13 @@ export function PdfViewer() {
   const [timerMinutes, setTimerMinutes] = useState(60);
   const [timeLeft, setTimeLeft] = useState(60 * 60);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
+
+  // Snip State
+  const [isSnipping, setIsSnipping] = useState(false);
+  const [snipStart, setSnipStart] = useState<{ x: number, y: number } | null>(null);
+  const [snipCurrent, setSnipCurrent] = useState<{ x: number, y: number } | null>(null);
+  const [capturedSnip, setCapturedSnip] = useState<string | null>(null);
+  const [isSavingSnip, setIsSavingSnip] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -152,6 +161,9 @@ export function PdfViewer() {
         setTimeLeft(prev => {
           if (prev <= 1) {
             setIsTimerRunning(false);
+            if (navigator.vibrate) {
+              navigator.vibrate(500);
+            }
             return 0;
           }
           return prev - 1;
@@ -541,6 +553,22 @@ export function PdfViewer() {
 
           <div className="h-4 w-px bg-neutral-800" />
 
+          {/* Snip Action */}
+          <button
+            onClick={() => {
+              setIsSnipping(true);
+              setSnipStart(null);
+              setSnipCurrent(null);
+            }}
+            className="p-1.5 text-blue-400 hover:text-blue-300 bg-blue-900/20 hover:bg-blue-900/30 rounded-lg transition-colors flex items-center gap-1"
+            title="Snip screen & save to Inbox"
+          >
+            <Scissors className="w-4 h-4" />
+            <span className="text-xs font-bold px-1">Snip</span>
+          </button>
+
+          <div className="h-4 w-px bg-neutral-800" />
+
           {/* Theme Controls */}
           <div className="flex items-center gap-1 bg-neutral-900 p-1 rounded-lg border border-neutral-800">
             <button 
@@ -703,6 +731,180 @@ export function PdfViewer() {
           {pdfContent}
         </div>
       </div>
+
+      {/* Snipping Overlay */}
+      {isSnipping && (
+        <div 
+          className="fixed inset-0 z-[100] cursor-crosshair bg-black/10"
+          onMouseDown={(e) => {
+            setSnipStart({ x: e.clientX, y: e.clientY });
+            setSnipCurrent({ x: e.clientX, y: e.clientY });
+          }}
+          onMouseMove={(e) => {
+            if (snipStart) {
+              setSnipCurrent({ x: e.clientX, y: e.clientY });
+            }
+          }}
+          onMouseUp={async () => {
+            if (!snipStart || !snipCurrent) {
+              setIsSnipping(false);
+              return;
+            }
+            const x = Math.min(snipStart.x, snipCurrent.x);
+            const y = Math.min(snipStart.y, snipCurrent.y);
+            const w = Math.abs(snipStart.x - snipCurrent.x);
+            const h = Math.abs(snipStart.y - snipCurrent.y);
+            
+            setSnipStart(null);
+            setSnipCurrent(null);
+            setIsSnipping(false);
+            
+            if (w > 10 && h > 10) {
+              try {
+                toast.loading("Capturing snip...", { id: "snip" });
+                
+                // Increase the rendering pixel ratio by 3x to ensure high-resolution snips
+                const dpr = (window.devicePixelRatio || 1) * 3;
+                
+                const cropCanvas = document.createElement('canvas');
+                cropCanvas.width = w * dpr;
+                cropCanvas.height = h * dpr;
+                const ctx = cropCanvas.getContext('2d');
+                
+                if (ctx) {
+                  // White background default
+                  ctx.fillStyle = theme === 'normal' ? '#ffffff' : '#1e1e1e';
+                  ctx.fillRect(0, 0, cropCanvas.width, cropCanvas.height);
+                  
+                  // Apply current theme filter so the snip matches what the user sees
+                  const filter = getThemeFilter();
+                  if (filter !== 'none') {
+                    ctx.filter = filter;
+                  }
+
+                  const canvases = scrollContainerRef.current?.querySelectorAll('canvas') || [];
+                  canvases.forEach(canvas => {
+                    const rect = canvas.getBoundingClientRect();
+                    const cropRect = { left: x, top: y, right: x + w, bottom: y + h };
+                    
+                    const intersection = {
+                      left: Math.max(rect.left, cropRect.left),
+                      top: Math.max(rect.top, cropRect.top),
+                      right: Math.min(rect.right, cropRect.right),
+                      bottom: Math.min(rect.bottom, cropRect.bottom)
+                    };
+                    
+                    if (intersection.left < intersection.right && intersection.top < intersection.bottom) {
+                      const srcX = (intersection.left - rect.left) * (canvas.width / rect.width);
+                      const srcY = (intersection.top - rect.top) * (canvas.height / rect.height);
+                      const srcW = (intersection.right - intersection.left) * (canvas.width / rect.width);
+                      const srcH = (intersection.bottom - intersection.top) * (canvas.height / rect.height);
+                      
+                      const destX = (intersection.left - cropRect.left) * dpr;
+                      const destY = (intersection.top - cropRect.top) * dpr;
+                      const destW = (intersection.right - intersection.left) * dpr;
+                      const destH = (intersection.bottom - intersection.top) * dpr;
+                      
+                      ctx.drawImage(canvas, srcX, srcY, srcW, srcH, destX, destY, destW, destH);
+                    }
+                  });
+
+                  // Rest of the data URL processing
+                  let dataUrl = cropCanvas.toDataURL('image/png');
+                  
+                  // Firestore limits documents to 1MB. Base64 is ~33% larger than binary.
+                  // 1MB * 1.33 ≈ 1.38M chars. We use 1.3M as the absolute safety threshold.
+                  if (dataUrl.length > 1300000) { 
+                    // Fallback to high-quality JPEG if PNG is too large
+                    dataUrl = cropCanvas.toDataURL('image/jpeg', 0.9);
+                  }
+                  if (dataUrl.length > 1300000) { 
+                    // Fallback to lower-quality JPEG if still too large
+                    dataUrl = cropCanvas.toDataURL('image/jpeg', 0.75);
+                  }
+                  
+                  setCapturedSnip(dataUrl);
+                  toast.success("Area captured!", { id: "snip" });
+                } else {
+                  throw new Error("Could not get canvas context");
+                }
+              } catch (e) {
+                console.error(e);
+                toast.error("Failed to capture snip", { id: "snip" });
+              }
+            } else {
+               toast.error("Selection too small", { id: "snip" });
+            }
+          }}
+        >
+          {snipStart && snipCurrent && (
+            <div 
+              className="absolute border-2 border-blue-500 bg-blue-500/20"
+              style={{
+                left: Math.min(snipStart.x, snipCurrent.x),
+                top: Math.min(snipStart.y, snipCurrent.y),
+                width: Math.abs(snipStart.x - snipCurrent.x),
+                height: Math.abs(snipStart.y - snipCurrent.y),
+              }}
+            />
+          )}
+        </div>
+      )}
+
+      {/* Captured Snip Modal */}
+      {capturedSnip && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl max-w-2xl w-full flex flex-col overflow-hidden">
+            <div className="p-4 border-b border-neutral-200 dark:border-neutral-800 flex justify-between items-center bg-white dark:bg-neutral-900">
+              <h3 className="font-bold text-lg text-neutral-900 dark:text-white">Save Snip to Inbox?</h3>
+              <button onClick={() => setCapturedSnip(null)} className="p-1 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded">
+                <X className="w-5 h-5 text-neutral-500" />
+              </button>
+            </div>
+            <div className="p-6 bg-neutral-100 dark:bg-neutral-950 flex items-center justify-center overflow-auto max-h-[60vh]">
+              <img src={capturedSnip} alt="Snip" className="max-w-full outline outline-1 outline-neutral-200 dark:outline-neutral-800 shadow-md rounded" />
+            </div>
+            <div className="p-4 bg-white dark:bg-neutral-900 border-t border-neutral-200 dark:border-neutral-800 flex justify-end gap-3">
+              <button 
+                onClick={() => setCapturedSnip(null)}
+                className="px-4 py-2 font-medium text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800 rounded-lg transition-colors"
+                disabled={isSavingSnip}
+              >
+                Discard
+              </button>
+              <button 
+                onClick={async () => {
+                   setIsSavingSnip(true);
+                   try {
+                      await addQuestion({
+                        id: crypto.randomUUID(),
+                        imageBase64: capturedSnip,
+                        subject: '',
+                        chapter: '',
+                        timestamp: Date.now(),
+                        tags: [],
+                        notes: '',
+                        isUncategorized: true,
+                        reviewStage: 0,
+                        nextReviewDate: Date.now() + 24 * 60 * 60 * 1000,
+                      });
+                      toast.success("Saved to Inbox!");
+                      setCapturedSnip(null);
+                   } catch(e) {
+                      toast.error("Failed to save");
+                   } finally {
+                      setIsSavingSnip(false);
+                   }
+                }}
+                disabled={isSavingSnip}
+                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition-colors flex justify-center items-center gap-2"
+              >
+                {isSavingSnip ? "Saving..." : "Save to Inbox"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

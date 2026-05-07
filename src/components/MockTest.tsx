@@ -12,6 +12,7 @@ export function MockTest() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [timeLeft, setTimeLeft] = useState(60 * 60); // 1 hour
   const [isFinished, setIsFinished] = useState(false);
+  const [showEndConfirm, setShowEndConfirm] = useState(false);
 
   const toggleChapter = (chapter: string) => {
     setSelectedChapters(prev => {
@@ -93,12 +94,7 @@ export function MockTest() {
               {formatTime(timeLeft)}
             </div>
             <button 
-              onClick={() => {
-                if (window.confirm('Are you sure you want to end the test?')) {
-                  setIsFinished(true);
-                  setIsTestRunning(false);
-                }
-              }}
+              onClick={() => setShowEndConfirm(true)}
               className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-sm font-medium transition-colors"
             >
               End Test
@@ -130,6 +126,35 @@ export function MockTest() {
             Next
           </button>
         </footer>
+
+        {showEndConfirm && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-xl w-full max-w-sm p-6 animate-in zoom-in-95 duration-200">
+              <h3 className="text-xl font-bold mb-2 text-neutral-900 dark:text-white">End Test</h3>
+              <p className="text-neutral-500 dark:text-neutral-400 mb-6 text-sm">
+                Are you sure you want to end the test? You won't be able to continue.
+              </p>
+              <div className="flex gap-3 justify-end mt-2">
+                <button 
+                  onClick={() => setShowEndConfirm(false)}
+                  className="px-4 py-2 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg transition-colors font-medium text-sm"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={() => {
+                    setIsFinished(true);
+                    setIsTestRunning(false);
+                    setShowEndConfirm(false);
+                  }}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors font-medium text-sm"
+                >
+                  End Test
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

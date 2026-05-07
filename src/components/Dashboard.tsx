@@ -1,9 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { getAllQuestionsMetadata, getAllPdfSessions, PdfSession, getRecycleBin, syncMetadata } from '../lib/db';
+import { getAllQuestionsMetadata, getAllPdfSessions, PdfSession, getRecycleBin, syncMetadata, DailyPlan, getDailyPlan, saveDailyPlan } from '../lib/db';
 import { ViewState, Subject } from '../App';
-import { BookOpen, Layers, Calendar, Inbox, Timer, FileText, ArrowRight, BrainCircuit, Play, Clock, Target, ChevronLeft, Trash2, FlaskConical, Calculator } from 'lucide-react';
+import { BookOpen, Layers, Calendar, Inbox, Timer, FileText, ArrowRight, BrainCircuit, Play, Clock, Target, ChevronLeft, Trash2, FlaskConical, Calculator, CheckCircle2, Circle } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { JEE_SYLLABUS } from '../lib/constants';
+
+const getTodayStr = () => {
+  const d = new Date();
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().split('T')[0];
+};
 
 interface DashboardProps {
   onViewChange: (view: ViewState) => void;
@@ -38,11 +44,19 @@ export function Dashboard({ onViewChange, refreshTrigger, onSelectSubject, onSel
   const [recentPdfs, setRecentPdfs] = useState<PdfSession[]>([]);
   const [activeSubject, setActiveSubject] = useState<Subject | null>(null);
   const [activeClass, setActiveClass] = useState<string | null>(null);
+  const [todayPlan, setTodayPlan] = useState<DailyPlan | null>(null);
 
   const DAILY_GOAL = 50;
 
   useEffect(() => {
     const loadData = async () => {
+      const plan = await getDailyPlan('current');
+      if (plan) {
+        setTodayPlan(plan);
+      } else {
+        setTodayPlan({ dateStr: 'current', tasks: [], locked: false });
+      }
+
       let allMetadata = await getAllQuestionsMetadata();
       
       // If cache is empty, try to sync
@@ -88,37 +102,101 @@ export function Dashboard({ onViewChange, refreshTrigger, onSelectSubject, onSel
     loadData();
   }, [refreshTrigger]);
 
+  const toggleTask = async (taskId: string) => {
+    if (!todayPlan || todayPlan.locked) return;
+    const updatedTasks = todayPlan.tasks.map(t => 
+      t.id === taskId ? { ...t, completed: !t.completed } : t
+    );
+    const updatedPlan = { ...todayPlan, tasks: updatedTasks };
+    setTodayPlan(updatedPlan);
+    await saveDailyPlan(updatedPlan);
+  };
+
+  const completedCount = todayPlan?.tasks.filter(t => t.completed).length || 0;
+  const totalCount = todayPlan?.tasks.length || 0;
+  const progressPercent = totalCount === 0 ? 0 : Math.round((completedCount / totalCount) * 100);
+
   return (
-    <div className="flex-1 overflow-y-auto bg-neutral-50 dark:bg-neutral-950 p-8">
-      <div className="max-w-5xl mx-auto space-y-8">
+    <div className="flex-1 overflow-y-auto bg-neutral-50 dark:bg-neutral-950 p-4 md:p-8">
+      <div className="max-w-5xl mx-auto space-y-6 md:space-y-8">
         
         <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-neutral-900 dark:text-white mb-2">
-              Welcome back
+              Execution Zone
             </h1>
             <p className="text-neutral-500 dark:text-neutral-400">
-              You have <strong className="text-neutral-900 dark:text-white">{stats.reviseToday}</strong> questions to revise and <strong className="text-neutral-900 dark:text-white">{stats.inbox}</strong> in your inbox.
+              Focus on today's tasks and get things done.
             </p>
           </div>
 
-          {/* Daily Goal Progress */}
+          {/* Daily Plan Progress */}
           <div className="bg-white dark:bg-neutral-900 p-4 rounded-2xl border border-neutral-200 dark:border-neutral-800 shadow-sm min-w-[250px]">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2 text-sm font-bold text-neutral-700 dark:text-neutral-300">
-                <Target className="w-4 h-4 text-blue-500" />
-                Daily Goal
+                <Target className="w-4 h-4 text-emerald-500" />
+                Today's Progress
               </div>
-              <span className="text-xs font-medium text-neutral-500">{stats.solvedToday} / {DAILY_GOAL}</span>
+              <span className="text-xs font-medium text-neutral-500">{completedCount} / {totalCount} ({progressPercent}%)</span>
             </div>
             <div className="h-2 bg-neutral-100 dark:bg-neutral-800 rounded-full overflow-hidden">
               <div 
-                className="h-full bg-blue-500 transition-all duration-500"
-                style={{ width: `${Math.min((stats.solvedToday / DAILY_GOAL) * 100, 100)}%` }}
+                className="h-full bg-emerald-500 transition-all duration-500"
+                style={{ width: `${progressPercent}%` }}
               />
             </div>
           </div>
         </header>
+
+        {/* Today's Targets */}
+        <div className="bg-white dark:bg-neutral-900 p-6 rounded-2xl border border-neutral-200 dark:border-neutral-800 shadow-sm">
+          <h2 className="text-xl font-bold mb-4 flex items-center gap-2 text-neutral-900 dark:text-white">
+            <CheckCircle2 className="w-5 h-5 text-blue-500" />
+            Today's Targets
+          </h2>
+          {totalCount === 0 ? (
+            <p className="text-neutral-500 dark:text-neutral-400 italic py-4">No targets planned for today. Go to the Daily Planner to set some.</p>
+          ) : (
+            <div className="space-y-3">
+              {todayPlan?.tasks.map(task => (
+                <div
+                  key={task.id}
+                  onClick={() => toggleTask(task.id)}
+                  className="w-full flex items-center justify-between p-3 text-left rounded-xl hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors border border-transparent hover:border-neutral-200 dark:hover:border-neutral-800 cursor-pointer group"
+                >
+                  <div className="flex items-center gap-3 flex-1 overflow-hidden pr-4">
+                    <div className="shrink-0" onClick={(e) => { e.stopPropagation(); toggleTask(task.id); }}>
+                      {task.completed ? (
+                        <CheckCircle2 className="w-6 h-6 text-emerald-500 cursor-pointer" />
+                      ) : (
+                        <Circle className="w-6 h-6 text-neutral-300 dark:text-neutral-600 group-hover:text-blue-500 transition-colors cursor-pointer" />
+                      )}
+                    </div>
+                    <span 
+                      className={cn(
+                        "text-base md:text-lg font-medium transition-all duration-200 truncate",
+                        task.completed 
+                          ? "text-neutral-400 line-through" 
+                          : "text-neutral-700 dark:text-neutral-300"
+                      )}
+                      onClick={(e) => { e.stopPropagation(); toggleTask(task.id); }}
+                    >
+                      {task.text}
+                    </span>
+                  </div>
+                  
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); alert('Mock: Opening resource for this task...'); }}
+                    className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 text-xs font-semibold rounded-lg hover:bg-blue-100 hover:text-blue-600 dark:hover:bg-blue-900/30 dark:hover:text-blue-400 transition-colors"
+                  >
+                    <BookOpen className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Open</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         {/* Active Launchpad */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

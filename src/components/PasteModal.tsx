@@ -12,12 +12,27 @@ interface PasteModalProps {
   onSave: (subject: Subject | '', chapter: string, tags: string[], notes: string, isUncategorized?: boolean, croppedImageUrl?: string) => void;
   initialSubject?: Subject | null;
   initialChapter?: string | null;
+  availableTags?: string[];
 }
 
-export function PasteModal({ imageUrl, onClose, onSave, initialSubject, initialChapter }: PasteModalProps) {
+export function PasteModal({ imageUrl, onClose, onSave, initialSubject, initialChapter, availableTags = QUICK_TAGS }: PasteModalProps) {
   const [subject, setSubject] = useState<Subject>(initialSubject || 'Physics');
-  const [classType, setClassType] = useState<'Class 11' | 'Class 12'>('Class 11');
-  const [chapter, setChapter] = useState(initialChapter || JEE_SYLLABUS[initialSubject || 'Physics']['Class 11'][0]);
+  const [classType, setClassType] = useState<'Class 11' | 'Class 12'>(() => {
+    if (initialSubject && initialChapter) {
+      if (JEE_SYLLABUS[initialSubject]['Class 12'].includes(initialChapter)) {
+        return 'Class 12';
+      }
+    }
+    return 'Class 11';
+  });
+  const [chapter, setChapter] = useState(() => {
+    if (initialSubject && initialChapter && 
+        (JEE_SYLLABUS[initialSubject]['Class 11'].includes(initialChapter) || 
+         JEE_SYLLABUS[initialSubject]['Class 12'].includes(initialChapter))) {
+      return initialChapter;
+    }
+    return JEE_SYLLABUS[initialSubject || 'Physics']['Class 11'][0];
+  });
   const [tags, setTags] = useState<string[]>([]);
   const [notes, setNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -312,7 +327,7 @@ export function PasteModal({ imageUrl, onClose, onSave, initialSubject, initialC
                 <Tag className="w-3 h-3" /> Tags
               </label>
               <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto p-1">
-                {QUICK_TAGS.map(tag => (
+                {availableTags.map(tag => (
                   <button
                     key={tag}
                     type="button"
@@ -331,12 +346,12 @@ export function PasteModal({ imageUrl, onClose, onSave, initialSubject, initialC
             </div>
 
             <div className="space-y-1.5 flex-1">
-              <label className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Notes / Source (Optional)</label>
+              <label className="text-sm font-medium text-neutral-700 dark:text-neutral-300">Mistakes / New Concepts Learnt / Source</label>
               <textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="e.g., HC Verma Pg 45, or 'Need to revise this concept'"
-                className="w-full h-20 px-3 py-2 bg-white dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-700 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                placeholder="e.g., Calculation mistake in step 2. Formula to remember: v² - u² = 2as. Source: HC Verma"
+                className="w-full h-24 px-3 py-2 bg-white dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-700 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
               />
             </div>
 

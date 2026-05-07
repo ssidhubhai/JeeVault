@@ -19,9 +19,10 @@ interface MainContentProps {
   selectedChapter: string | null;
   refreshTrigger: number;
   onRefresh: () => void;
+  availableTags?: string[];
 }
 
-export function MainContent({ selectedSubject, selectedChapter, refreshTrigger, onRefresh }: MainContentProps) {
+export function MainContent({ selectedSubject, selectedChapter, refreshTrigger, onRefresh, availableTags = [] }: MainContentProps) {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [fullscreenIndex, setFullscreenIndex] = useState<number | null>(null);
   const [showFullscreenDetails, setShowFullscreenDetails] = useState(false);
@@ -364,19 +365,19 @@ export function MainContent({ selectedSubject, selectedChapter, refreshTrigger, 
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden relative">
-      <header className="flex flex-col p-6 border-b border-neutral-200 dark:border-neutral-800 bg-white/50 dark:bg-neutral-950/50 backdrop-blur-md gap-4">
+      <header className="flex flex-col p-4 md:p-6 border-b border-neutral-200 dark:border-neutral-800 bg-white/50 dark:bg-neutral-950/50 backdrop-blur-md gap-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <p className="text-sm text-neutral-500 dark:text-neutral-400 font-medium">{selectedSubject}</p>
-            <h2 className="text-2xl font-bold tracking-tight">{selectedChapter}</h2>
+            <h2 className="text-xl md:text-2xl font-bold tracking-tight">{selectedChapter}</h2>
           </div>
           
-          <div className="flex items-center gap-3">
+          <div className="flex items-center flex-wrap gap-2 md:gap-3">
             <div className="flex bg-neutral-100 dark:bg-neutral-800 p-1 rounded-lg">
               <button
                 onClick={() => { setActiveTab('unsolved'); setSelectedIds(new Set()); setIsSelectionMode(false); }}
                 className={cn(
-                  "px-4 py-1.5 text-sm font-medium rounded-md transition-all",
+                  "px-3 md:px-4 py-1.5 text-xs md:text-sm font-medium rounded-md transition-all",
                   activeTab === 'unsolved' 
                     ? "bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white shadow-sm" 
                     : "text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
@@ -387,7 +388,7 @@ export function MainContent({ selectedSubject, selectedChapter, refreshTrigger, 
               <button
                 onClick={() => { setActiveTab('solved'); setSelectedIds(new Set()); setIsSelectionMode(false); }}
                 className={cn(
-                  "px-4 py-1.5 text-sm font-medium rounded-md transition-all",
+                  "px-3 md:px-4 py-1.5 text-xs md:text-sm font-medium rounded-md transition-all",
                   activeTab === 'solved' 
                     ? "bg-white dark:bg-neutral-900 text-neutral-900 dark:text-white shadow-sm" 
                     : "text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
@@ -403,7 +404,7 @@ export function MainContent({ selectedSubject, selectedChapter, refreshTrigger, 
                 setIsPracticeMode(true);
               }}
               disabled={displayedQuestions.length === 0}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg font-medium text-sm hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+              className="flex justify-center items-center gap-2 px-3 md:px-4 py-2 bg-blue-600 text-white rounded-lg font-medium text-sm hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
             >
               <Play className="w-4 h-4" fill="currentColor" />
               <span className="hidden sm:inline">Practice</span>
@@ -412,7 +413,7 @@ export function MainContent({ selectedSubject, selectedChapter, refreshTrigger, 
             <button
               onClick={handleExportPDF}
               disabled={displayedQuestions.length === 0 || isExporting}
-              className="flex items-center gap-2 px-4 py-2 bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 rounded-lg font-medium text-sm hover:bg-neutral-800 dark:hover:bg-neutral-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+              className="flex justify-center items-center gap-2 px-3 md:px-4 py-2 bg-neutral-900 dark:bg-white text-white dark:text-neutral-900 rounded-lg font-medium text-sm hover:bg-neutral-800 dark:hover:bg-neutral-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
             >
               <Download className="w-4 h-4" />
               <span className="hidden sm:inline">Export PDF</span>
@@ -420,46 +421,31 @@ export function MainContent({ selectedSubject, selectedChapter, refreshTrigger, 
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-4 mt-2">
-          <div className="flex items-center gap-2 flex-1 max-w-2xl">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
-              <input
-                type="text"
-                placeholder="Search tags or notes..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mt-2">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 flex-1 max-w-2xl">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
+                <input
+                  type="text"
+                  placeholder="Search tags or notes..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="relative">
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as any)}
+                  className="w-full sm:w-auto appearance-none pl-8 pr-8 py-2 bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="newest">Newest First</option>
+                  <option value="oldest">Oldest First</option>
+                  <option value="tags">Sort by Tags</option>
+                </select>
+                <ArrowUpDown className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none" />
+              </div>
             </div>
-            <div className="relative">
-              <select
-                value={tagFilter}
-                onChange={(e) => setTagFilter(e.target.value)}
-                className="appearance-none pl-8 pr-8 py-2 bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="All">All Tags</option>
-                <option value="Silly Mistake">Silly Mistakes</option>
-                <option value="Good Question">Good Questions</option>
-                <option value="PYQ">PYQs</option>
-                <option value="Doubt">Doubts</option>
-                <option value="Important">Important</option>
-              </select>
-              <TagIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none" />
-            </div>
-            <div className="relative">
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as any)}
-                className="appearance-none pl-8 pr-8 py-2 bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="newest">Newest First</option>
-                <option value="oldest">Oldest First</option>
-                <option value="tags">Sort by Tags</option>
-              </select>
-              <ArrowUpDown className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none" />
-            </div>
-          </div>
 
           <div className="flex items-center gap-2">
             {isSelectionMode ? (
@@ -498,6 +484,37 @@ export function MainContent({ selectedSubject, selectedChapter, refreshTrigger, 
             )}
           </div>
         </div>
+        
+        {/* Tag Tabs */}
+        {availableTags.length > 0 && (
+          <div className="flex overflow-x-auto gap-2 pt-2 pb-1 scrollbar-hide -mx-2 px-2">
+            <button
+              onClick={() => setTagFilter('All')}
+              className={cn(
+                "whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium transition-colors border",
+                tagFilter === 'All' 
+                  ? "bg-neutral-900 border-neutral-900 text-white dark:bg-white dark:border-white dark:text-neutral-900" 
+                  : "bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-800 text-neutral-600 dark:text-neutral-300 hover:border-neutral-300 dark:hover:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800"
+              )}
+            >
+              All Tags
+            </button>
+            {availableTags.map(tag => (
+              <button
+                key={tag}
+                onClick={() => setTagFilter(tag)}
+                className={cn(
+                  "whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium transition-colors border",
+                  tagFilter === tag 
+                    ? "bg-blue-600 border-blue-600 text-white" 
+                    : "bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-800 text-neutral-600 dark:text-neutral-300 hover:border-neutral-300 dark:hover:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800"
+                )}
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+        )}
       </header>
 
       <div className="flex-1 overflow-y-auto p-6">
