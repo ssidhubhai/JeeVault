@@ -13,6 +13,10 @@ export function MockTest() {
   const [timeLeft, setTimeLeft] = useState(60 * 60); // 1 hour
   const [isFinished, setIsFinished] = useState(false);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
+  
+  const [numPhysics, setNumPhysics] = useState(10);
+  const [numChemistry, setNumChemistry] = useState(10);
+  const [numMaths, setNumMaths] = useState(10);
 
   const toggleChapter = (chapter: string) => {
     setSelectedChapters(prev => {
@@ -28,14 +32,27 @@ export function MockTest() {
     const all = await getAllQuestions();
     const eligible = all.filter(q => !q.isUncategorized && !q.isSolved && selectedChapters.has(q.chapter));
     
-    // Shuffle and pick 25
-    const shuffled = eligible.sort(() => 0.5 - Math.random());
-    const selected = shuffled.slice(0, 25);
+    const phy = eligible.filter(q => q.subject === 'Physics');
+    const phyShuffled = phy.sort(() => 0.5 - Math.random()).slice(0, numPhysics);
+
+    const chem = eligible.filter(q => q.subject.includes('Chemistry'));
+    const chemShuffled = chem.sort(() => 0.5 - Math.random()).slice(0, numChemistry);
+
+    const math = eligible.filter(q => q.subject === 'Mathematics');
+    const mathShuffled = math.sort(() => 0.5 - Math.random()).slice(0, numMaths);
+
+    const selected = [...phyShuffled, ...chemShuffled, ...mathShuffled];
+
+    if (selected.length === 0) {
+      alert('No unsolved questions found in selected chapters.');
+      return;
+    }
     
     setTestQuestions(selected);
     setIsTestRunning(true);
     setIsFinished(false);
-    setTimeLeft(60 * 60);
+    // 3 minutes per question roughly
+    setTimeLeft(selected.length * 3 * 60);
     setCurrentIndex(0);
   };
 
@@ -166,7 +183,23 @@ export function MockTest() {
           <Timer className="w-6 h-6 text-rose-500" />
           Custom Mock Test
         </h2>
-        <p className="text-sm text-neutral-500 dark:text-neutral-400">Select chapters to generate a 1-hour, 25-question test.</p>
+        <p className="text-sm text-neutral-500 dark:text-neutral-400">Select chapters and number of questions to generate a timed mock test.</p>
+        
+        <div className="mt-6 flex flex-wrap gap-4 items-center">
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium text-blue-600 dark:text-blue-400">Physics Qs:</label>
+            <input type="number" min="0" max="50" value={numPhysics} onChange={e => setNumPhysics(parseInt(e.target.value) || 0)} className="w-16 px-2 py-1 border border-neutral-300 dark:border-neutral-700 rounded-lg bg-white dark:bg-neutral-900 text-sm" />
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium text-emerald-600 dark:text-emerald-400">Chemistry Qs:</label>
+            <input type="number" min="0" max="50" value={numChemistry} onChange={e => setNumChemistry(parseInt(e.target.value) || 0)} className="w-16 px-2 py-1 border border-neutral-300 dark:border-neutral-700 rounded-lg bg-white dark:bg-neutral-900 text-sm" />
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium text-rose-600 dark:text-rose-400">Maths Qs:</label>
+            <input type="number" min="0" max="50" value={numMaths} onChange={e => setNumMaths(parseInt(e.target.value) || 0)} className="w-16 px-2 py-1 border border-neutral-300 dark:border-neutral-700 rounded-lg bg-white dark:bg-neutral-900 text-sm" />
+          </div>
+          <span className="text-sm text-neutral-500 italic ml-2">Total Time: ~{Math.round((numPhysics + numChemistry + numMaths) * 3)} mins</span>
+        </div>
       </header>
 
       <div className="flex-1 overflow-y-auto p-6">

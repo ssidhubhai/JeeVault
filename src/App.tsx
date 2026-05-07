@@ -12,7 +12,7 @@ import { Planner } from './components/Planner';
 import { PdfViewer } from './components/PdfViewer';
 import { StorageManager } from './components/StorageManager';
 import { RecycleBin } from './components/RecycleBin';
-import { AnalyticsView } from './components/AnalyticsView';
+import { TestAnalysis } from './components/TestAnalysis';
 import { SyllabusTracker } from './components/SyllabusTracker';
 import { MistakeBook } from './components/MistakeBook';
 import { Settings } from './components/Settings';
@@ -22,7 +22,7 @@ import { cn } from './lib/utils';
 import { QUICK_TAGS } from './lib/constants';
 
 export type Subject = 'Physics' | 'Physical Chemistry' | 'Inorganic Chemistry' | 'Organic Chemistry' | 'Mathematics';
-export type ViewState = 'dashboard' | 'planner' | 'vault' | 'syllabus' | 'flashcards' | 'revise' | 'inbox' | 'mocktest' | 'pdf' | 'storage' | 'recycle-bin' | 'analytics' | 'mistakes' | 'settings';
+export type ViewState = 'dashboard' | 'planner' | 'vault' | 'syllabus' | 'flashcards' | 'revise' | 'inbox' | 'mocktest' | 'pdf' | 'storage' | 'recycle-bin' | 'test-analysis' | 'mistakes' | 'settings';
 
 export default function App() {
   const [currentView, setCurrentView] = useState<ViewState>('dashboard');
@@ -231,7 +231,7 @@ export default function App() {
           {currentView === 'storage' && <StorageManager />}
           {currentView === 'recycle-bin' && <RecycleBin refreshTrigger={refreshTrigger} onRefresh={() => setRefreshTrigger(prev => prev + 1)} />}
           {currentView === 'syllabus' && <SyllabusTracker />}
-          {currentView === 'analytics' && <AnalyticsView />}
+          {currentView === 'test-analysis' && <TestAnalysis />}
           {currentView === 'mistakes' && <MistakeBook />}
           {currentView === 'settings' && <Settings onTagsChange={setUserTags} />}
         </div>

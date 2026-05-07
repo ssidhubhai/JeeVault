@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { BookOpen, FlaskConical, Calculator, ChevronRight, ChevronDown, Layers, Calendar, Inbox as InboxIcon, Timer, HardDrive, Trash2, Activity, Settings, PanelLeftClose, AlertOctagon } from 'lucide-react';
+import { BookOpen, FlaskConical, Calculator, ChevronRight, ChevronDown, Layers, Calendar, Inbox as InboxIcon, Timer, HardDrive, Trash2, Activity, Settings, PanelLeftClose, AlertOctagon, BarChart2 } from 'lucide-react';
 import { Subject, ViewState } from '../App';
 import { getAllQuestionsMetadata, getRecycleBin, syncMetadata } from '../lib/db';
 import { cn } from '../lib/utils';
@@ -207,7 +207,7 @@ export function Sidebar({ currentView, onViewChange, selectedSubject, selectedCh
   };
 
   return (
-    <aside className="w-72 border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-950 flex flex-col h-full">
+    <aside className="w-full h-full bg-white dark:bg-neutral-950 flex flex-col">
       <div className="p-4 border-b border-neutral-200 dark:border-neutral-800 flex justify-between items-start gap-2">
         <div className="flex-1">
           <button 
@@ -258,16 +258,16 @@ export function Sidebar({ currentView, onViewChange, selectedSubject, selectedCh
           Daily Planner
         </button>
         <button
-          onClick={() => onViewChange('analytics')}
+          onClick={() => onViewChange('test-analysis')}
           className={cn(
             "w-full flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors",
-            currentView === 'analytics' 
-              ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300" 
+            currentView === 'test-analysis' 
+              ? "bg-fuchsia-50 text-fuchsia-700 dark:bg-fuchsia-900/30 dark:text-fuchsia-300" 
               : "text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800/50"
           )}
         >
-          <Activity className="w-4 h-4" />
-          Analytics & Weekly Review
+          <BarChart2 className="w-4 h-4" />
+          Analytics & Tests
         </button>
         <button
           onClick={() => onViewChange('syllabus')}

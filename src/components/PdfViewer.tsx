@@ -763,8 +763,8 @@ export function PdfViewer() {
               try {
                 toast.loading("Capturing snip...", { id: "snip" });
                 
-                // Increase the rendering pixel ratio by 3x to ensure high-resolution snips
-                const dpr = (window.devicePixelRatio || 1) * 3;
+                // Ensure a minimum DPR of 2 for high quality, but avoid absurdly large values
+                const dpr = Math.max(2, window.devicePixelRatio || 1);
                 
                 const cropCanvas = document.createElement('canvas');
                 cropCanvas.width = w * dpr;

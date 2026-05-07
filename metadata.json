@@ -1,5 +1,5 @@
 {
-  "name": "JEE Question Vault",
-  "description": "Save, organize, and export screenshot images of study questions for JEE preparation.",
+  "name": "JEE Vault",
+  "description": "Comprehensive JEE preparation tool with mock test analysis, mistake tracking, daily planning, and syllabus tracking.",
   "requestFramePermissions": []
 }

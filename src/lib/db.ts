@@ -138,7 +138,10 @@ export const getUserTags = async (): Promise<string[]> => {
       return snap.data().tags;
     }
   } catch (error) {
-    console.error("Error fetching tags:", error);
+    if (error instanceof Error && error.message.includes('offline')) {
+      return [];
+    }
+    console.warn("Could not fetch tags (offline):", error);
   }
   return []; // Return empty, we can fallback to QUICK_TAGS if empty in the UI
 };
