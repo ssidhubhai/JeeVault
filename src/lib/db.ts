@@ -8,6 +8,11 @@ export interface PdfSession {
   fileUrl?: string;
   fileData?: ArrayBuffer;
   fileType?: string;
+  subject?: string;
+  chapter?: string;
+  boxName?: string;
+  orderIndex?: number;
+  deletedAt?: number;
   pageNumber: number;
   scale?: number;
   theme?: string;
@@ -207,12 +212,23 @@ export const savePdfSession = async (session: PdfSession) => {
     fileName: session.fileName,
     fileType: session.fileType,
     pageNumber: session.pageNumber,
-    scale: session.scale,
-    theme: session.theme,
-    timerMinutes: session.timerMinutes,
-    timeLeft: session.timeLeft,
-    lastOpened: session.lastOpened || Date.now()
+    scale: session.scale ?? null,
+    theme: session.theme ?? null,
+    timerMinutes: session.timerMinutes ?? null,
+    timeLeft: session.timeLeft ?? null,
+    lastOpened: session.lastOpened || Date.now(),
+    subject: session.subject || null,
+    chapter: session.chapter || null,
+    boxName: session.boxName || null,
+    orderIndex: session.orderIndex || 0,
+    deletedAt: session.deletedAt || null
   };
+  
+  Object.keys(sessionData).forEach(key => {
+    if ((sessionData as any)[key] === undefined) {
+      delete (sessionData as any)[key];
+    }
+  });
 
   await setDoc(doc(db, `users/${uid}/pdf_sessions`, session.id), sessionData);
 };
@@ -249,7 +265,83 @@ export const clearPdfSession = async (id: string) => {
   await ldb.delete('pdfFiles', id);
 };
 
-// Helper to wrap a promise with a timeout
+export interface ChapterBox {
+  id: string;
+  name: string;
+  orderIndex: number;
+}
+
+export const getChapterBoxes = async (subject: string, chapter: string): Promise<ChapterBox[]> => {
+  try {
+    const uid = getUserId();
+    const safeDocId = encodeURIComponent(`${subject}_${chapter}`);
+    const docSnap = await getDoc(doc(db, `users/${uid}/chapter_boxes`, safeDocId));
+    if (docSnap.exists()) {
+      return (docSnap.data().boxes || []) as ChapterBox[];
+    }
+  } catch (e) {
+    console.error('Failed to get chapter boxes', e);
+  }
+  return [];
+};
+
+export const saveChapterBoxes = async (subject: string, chapter: string, boxes: ChapterBox[]) => {
+  try {
+    const uid = getUserId();
+    const safeDocId = encodeURIComponent(`${subject}_${chapter}`);
+    await setDoc(doc(db, `users/${uid}/chapter_boxes`, safeDocId), { boxes }, { merge: true });
+  } catch (e) {
+    console.error('Failed to save chapter boxes', e);
+  }
+};
+
+export const getPdfRecycleBin = async (): Promise<PdfSession[]> => {
+  const uid = getUserId();
+  const q = query(collection(db, `users/${uid}/pdf_sessions`), where('deletedAt', '!=', null));
+  const querySnapshot = await getDocs(q);
+  // because firestore handles '!=' with ordering on the same field, sorting might need to be done in memory
+  const docs = querySnapshot.docs.map(doc => doc.data() as PdfSession);
+  return docs.filter(d => d.deletedAt).sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0));
+}
+
+export const restorePdfSession = async (id: string) => {
+  const uid = getUserId();
+  await setDoc(doc(db, `users/${uid}/pdf_sessions`, id), { deletedAt: null }, { merge: true });
+}
+
+export const emptyPdfRecycleBin = async () => {
+  const uid = getUserId();
+  const q = query(collection(db, `users/${uid}/pdf_sessions`), where('deletedAt', '!=', null));
+  const querySnapshot = await getDocs(q);
+  const ldb = await getLocalDB();
+  
+  const batch = writeBatch(db);
+  for (const docSnap of querySnapshot.docs) {
+    batch.delete(docSnap.ref);
+    await ldb.delete('pdfFiles', docSnap.id);
+  }
+  await batch.commit();
+}
+
+export const deleteMultiplePdfsFromRecycleBin = async (ids: string[]) => {
+  const uid = getUserId();
+  const ldb = await getLocalDB();
+  const batch = writeBatch(db);
+  for (const id of ids) {
+    batch.delete(doc(db, `users/${uid}/pdf_sessions`, id));
+    await ldb.delete('pdfFiles', id);
+  }
+  await batch.commit();
+}
+
+export const restoreMultiplePdfs = async (ids: string[]) => {
+  const uid = getUserId();
+  const batch = writeBatch(db);
+  for (const id of ids) {
+    batch.update(doc(db, `users/${uid}/pdf_sessions`, id), { deletedAt: null });
+  }
+  await batch.commit();
+}
 const withTimeout = <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
   return Promise.race([
     promise,
@@ -497,12 +589,15 @@ export interface DailyTask {
   completed: boolean;
   missedReason?: string;
   missedNotes?: string;
+  reminderTime?: string;
+  recurrence?: 'none' | 'daily' | 'weekly' | 'monthly';
 }
 
 export interface DailyPlan {
   dateStr: string; // 'YYYY-MM-DD' or 'tomorrow'
   tasks: DailyTask[];
   hoursStudied?: number;
+  studyGoalHours?: number;
   notes?: string;
   locked: boolean;
 }

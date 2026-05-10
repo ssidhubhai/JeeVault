@@ -13,7 +13,11 @@ pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/b
 
 type Theme = 'normal' | 'dark' | 'sepia' | 'warm';
 
-export function PdfViewer() {
+interface PdfViewerProps {
+  initialPdfId?: string | null;
+}
+
+export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
   const [file, setFile] = useState<File | null>(null);
   const [numPages, setNumPages] = useState<number>(0);
   const [pageNumber, setPageNumber] = useState<number>(1);
@@ -74,6 +78,13 @@ export function PdfViewer() {
         // Sort descending by lastOpened
         sessions.sort((a, b) => (b.lastOpened || 0) - (a.lastOpened || 0));
         setRecentSessions(sessions);
+        
+        if (initialPdfId) {
+          const sessionToLoad = sessions.find(s => s.id === initialPdfId);
+          if (sessionToLoad) {
+            loadPdfSession(sessionToLoad);
+          }
+        }
       } catch (error) {
         console.error('Failed to load PDF sessions:', error);
       } finally {
@@ -81,7 +92,7 @@ export function PdfViewer() {
       }
     };
     loadSessions();
-  }, []);
+  }, [initialPdfId]);
 
   const initialPageRef = useRef<number>(1);
 

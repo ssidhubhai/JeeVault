@@ -6,6 +6,8 @@ import { toast } from 'react-hot-toast';
 import jsPDF from 'jspdf';
 import { cn } from '../lib/utils';
 
+import { ChapterResources } from './ChapterResources';
+
 // SRS Intervals: 1 day, 3 days, 1 week, 1 month
 const SRS_INTERVALS = [
   1 * 24 * 60 * 60 * 1000,
@@ -28,6 +30,7 @@ export function MainContent({ selectedSubject, selectedChapter, refreshTrigger, 
   const [showFullscreenDetails, setShowFullscreenDetails] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [isExporting, setIsExporting] = useState(false);
+  const [viewMode, setViewMode] = useState<'questions' | 'resources'>('questions');
   const [activeTab, setActiveTab] = useState<'unsolved' | 'solved'>('unsolved');
   
   const [searchQuery, setSearchQuery] = useState('');
@@ -366,15 +369,40 @@ export function MainContent({ selectedSubject, selectedChapter, refreshTrigger, 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden relative">
       <header className="flex flex-col p-4 md:p-6 border-b border-neutral-200 dark:border-neutral-800 bg-white/50 dark:bg-neutral-950/50 backdrop-blur-md gap-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <p className="text-sm text-neutral-500 dark:text-neutral-400 font-medium">{selectedSubject}</p>
-            <h2 className="text-xl md:text-2xl font-bold tracking-tight">{selectedChapter}</h2>
-          </div>
-          
-          <div className="flex items-center flex-wrap gap-2 md:gap-3">
-            <div className="flex bg-neutral-100 dark:bg-neutral-800 p-1 rounded-lg">
-              <button
+        
+        {/* Main View Toggle */}
+        <div className="flex border-b border-neutral-200 dark:border-neutral-800 -mx-4 -mt-4 mb-2 px-4 pt-2">
+          <button
+            onClick={() => setViewMode('questions')}
+            className={cn(
+              "px-4 py-3 text-sm font-bold border-b-2 transition-colors",
+              viewMode === 'questions' ? "border-black dark:border-white text-black dark:text-white" : "border-transparent text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
+            )}
+          >
+            Questions
+          </button>
+          <button
+            onClick={() => setViewMode('resources')}
+            className={cn(
+              "px-4 py-3 text-sm font-bold border-b-2 transition-colors",
+              viewMode === 'resources' ? "border-black dark:border-white text-black dark:text-white" : "border-transparent text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
+            )}
+          >
+            Resources
+          </button>
+        </div>
+
+        {viewMode === 'questions' && (
+          <>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <p className="text-sm text-neutral-500 dark:text-neutral-400 font-medium">{selectedSubject}</p>
+                <h2 className="text-xl md:text-2xl font-bold tracking-tight">{selectedChapter}</h2>
+              </div>
+              
+              <div className="flex items-center flex-wrap gap-2 md:gap-3">
+                <div className="flex bg-neutral-100 dark:bg-neutral-800 p-1 rounded-lg">
+                  <button
                 onClick={() => { setActiveTab('unsolved'); setSelectedIds(new Set()); setIsSelectionMode(false); }}
                 className={cn(
                   "px-3 md:px-4 py-1.5 text-xs md:text-sm font-medium rounded-md transition-all",
@@ -445,6 +473,19 @@ export function MainContent({ selectedSubject, selectedChapter, refreshTrigger, 
                 </select>
                 <ArrowUpDown className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none" />
               </div>
+              <div className="relative">
+                <select
+                  value={tagFilter}
+                  onChange={(e) => setTagFilter(e.target.value)}
+                  className="w-full sm:w-auto appearance-none pl-8 pr-8 py-2 bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="All">All Tags</option>
+                  {availableTags.map(tag => (
+                    <option key={tag} value={tag}>{tag}</option>
+                  ))}
+                </select>
+                <TagIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400 pointer-events-none" />
+              </div>
             </div>
 
           <div className="flex items-center gap-2">
@@ -484,41 +525,18 @@ export function MainContent({ selectedSubject, selectedChapter, refreshTrigger, 
             )}
           </div>
         </div>
-        
-        {/* Tag Tabs */}
-        {availableTags.length > 0 && (
-          <div className="flex overflow-x-auto gap-2 pt-2 pb-1 scrollbar-hide -mx-2 px-2">
-            <button
-              onClick={() => setTagFilter('All')}
-              className={cn(
-                "whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium transition-colors border",
-                tagFilter === 'All' 
-                  ? "bg-neutral-900 border-neutral-900 text-white dark:bg-white dark:border-white dark:text-neutral-900" 
-                  : "bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-800 text-neutral-600 dark:text-neutral-300 hover:border-neutral-300 dark:hover:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800"
-              )}
-            >
-              All Tags
-            </button>
-            {availableTags.map(tag => (
-              <button
-                key={tag}
-                onClick={() => setTagFilter(tag)}
-                className={cn(
-                  "whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium transition-colors border",
-                  tagFilter === tag 
-                    ? "bg-blue-600 border-blue-600 text-white" 
-                    : "bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-800 text-neutral-600 dark:text-neutral-300 hover:border-neutral-300 dark:hover:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800"
-                )}
-              >
-                {tag}
-              </button>
-            ))}
-          </div>
+          </>
         )}
       </header>
 
       <div className="flex-1 overflow-y-auto p-6">
-        {displayedQuestions.length === 0 ? (
+        {viewMode === 'resources' ? (
+          <ChapterResources
+            subject={selectedSubject!}
+            chapter={selectedChapter!}
+            onOpenPdf={(pdfId) => window.open('/?pdfId=' + pdfId, '_blank')}
+          />
+        ) : displayedQuestions.length === 0 ? (
           <div className="h-full flex items-center justify-center text-neutral-400 border-2 border-dashed border-neutral-200 dark:border-neutral-800 rounded-xl">
             <div className="text-center">
               <p className="mb-2">

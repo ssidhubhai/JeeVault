@@ -22,7 +22,7 @@ import { cn } from './lib/utils';
 import { QUICK_TAGS } from './lib/constants';
 
 export type Subject = 'Physics' | 'Physical Chemistry' | 'Inorganic Chemistry' | 'Organic Chemistry' | 'Mathematics';
-export type ViewState = 'dashboard' | 'planner' | 'vault' | 'syllabus' | 'flashcards' | 'revise' | 'inbox' | 'mocktest' | 'pdf' | 'storage' | 'recycle-bin' | 'test-analysis' | 'mistakes' | 'settings';
+export type ViewState = 'dashboard' | 'planner' | 'vault' | 'syllabus' | 'flashcards' | 'inbox' | 'mocktest' | 'pdf' | 'storage' | 'recycle-bin' | 'test-analysis' | 'mistakes' | 'settings';
 
 export default function App() {
   const [currentView, setCurrentView] = useState<ViewState>('dashboard');
@@ -33,11 +33,19 @@ export default function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isDesktopSidebarOpen, setIsDesktopSidebarOpen] = useState(true);
   const [userTags, setUserTags] = useState<string[]>(QUICK_TAGS);
+  const [activePdfId, setActivePdfId] = useState<string | null>(null);
 
   useEffect(() => {
     getUserTags().then(tags => {
       if (tags.length > 0) setUserTags(tags);
     });
+
+    const params = new URLSearchParams(window.location.search);
+    const pdfId = params.get('pdfId');
+    if (pdfId) {
+      setActivePdfId(pdfId);
+      setCurrentView('pdf');
+    }
   }, []);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -224,10 +232,9 @@ export default function App() {
             />
           )}
           {currentView === 'flashcards' && <Flashcards />}
-          {currentView === 'revise' && <ReviseToday />}
           {currentView === 'inbox' && <Inbox refreshTrigger={refreshTrigger} onRefresh={() => setRefreshTrigger(prev => prev + 1)} availableTags={userTags} />}
           {currentView === 'mocktest' && <MockTest />}
-          {currentView === 'pdf' && <PdfViewer />}
+          {currentView === 'pdf' && <PdfViewer initialPdfId={activePdfId} />}
           {currentView === 'storage' && <StorageManager />}
           {currentView === 'recycle-bin' && <RecycleBin refreshTrigger={refreshTrigger} onRefresh={() => setRefreshTrigger(prev => prev + 1)} />}
           {currentView === 'syllabus' && <SyllabusTracker />}
@@ -243,7 +250,7 @@ export default function App() {
           { id: 'dashboard', icon: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>, label: 'Home' },
           { id: 'planner', icon: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/><path d="M8 18h.01"/><path d="M12 18h.01"/><path d="M16 18h.01"/></svg>, label: 'Plan' },
           { id: 'vault', icon: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>, label: 'Vault' },
-          { id: 'revise', icon: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>, label: 'Revise' },
+          { id: 'inbox', icon: <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M4 6h16l-3.3 12.3A2 2 0 0 1 14.8 20H9.2a2 2 0 0 1-1.9-1.7L4 6z"/><path d="M12 12v.01"/></svg>, label: 'Inbox' },
         ].map(item => (
           <button
             key={item.id}

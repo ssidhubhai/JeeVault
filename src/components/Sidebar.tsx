@@ -134,7 +134,7 @@ export function Sidebar({ currentView, onViewChange, selectedSubject, selectedCh
   const [expandedClasses, setExpandedClasses] = useState<Set<string>>(new Set());
   const [chapterCounts, setChapterCounts] = useState<Record<string, { total: number, unsolved: number }>>({});
   const [inboxCount, setInboxCount] = useState(0);
-  const [reviseCount, setReviseCount] = useState(0);
+
   const [recycleCount, setRecycleCount] = useState(0);
 
   useEffect(() => {
@@ -149,7 +149,6 @@ export function Sidebar({ currentView, onViewChange, selectedSubject, selectedCh
 
       const counts: Record<string, { total: number, unsolved: number }> = {};
       let inbox = 0;
-      let revise = 0;
       const now = Date.now();
       
       allMetadata.forEach(q => {
@@ -164,9 +163,6 @@ export function Sidebar({ currentView, onViewChange, selectedSubject, selectedCh
             if (!q.isSolved) {
               counts[q.chapter].unsolved += 1;
             }
-            if (q.nextReviewDate && q.nextReviewDate <= now && !q.isSolved) {
-              revise++;
-            }
           }
         }
       });
@@ -175,7 +171,6 @@ export function Sidebar({ currentView, onViewChange, selectedSubject, selectedCh
       
       setChapterCounts(counts);
       setInboxCount(inbox);
-      setReviseCount(revise);
       setRecycleCount(recycle.length);
     };
     loadCounts();
@@ -304,25 +299,6 @@ export function Sidebar({ currentView, onViewChange, selectedSubject, selectedCh
         >
           <Settings className="w-4 h-4" />
           Settings
-        </button>
-        <button
-          onClick={() => onViewChange('revise')}
-          className={cn(
-            "w-full flex items-center justify-between px-3 py-2 text-sm font-medium rounded-lg transition-colors",
-            currentView === 'revise' 
-              ? "bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300" 
-              : "text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800/50"
-          )}
-        >
-          <div className="flex items-center gap-2">
-            <Calendar className="w-4 h-4" />
-            Revise Today
-          </div>
-          {reviseCount > 0 && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-400">
-              {reviseCount}
-            </span>
-          )}
         </button>
         <button
           onClick={() => onViewChange('inbox')}

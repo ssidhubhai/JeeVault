@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { DailyPlan, DailyTask, getDailyPlan, saveDailyPlan, getAllDailyPlans } from '../lib/db';
-import { Calendar as CalendarIcon, CheckCircle2, Circle, Clock, Save, Target, X, ChevronRight, XCircle, Trash2 } from 'lucide-react';
+import { Calendar as CalendarIcon, CheckCircle2, Circle, Clock, Save, Target, X, ChevronRight, XCircle, Trash2, Bell, AlertCircle, Repeat, GripVertical, Lock, Unlock } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { toast } from 'react-hot-toast';
+import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 
 const getTodayStr = () => {
   const d = new Date();
@@ -22,22 +23,57 @@ export function Planner() {
   const [todayPlan, setTodayPlan] = useState<DailyPlan | null>(null);
   const [tomorrowPlan, setTomorrowPlan] = useState<DailyPlan | null>(null);
   const [notes, setNotes] = useState('');
-  const [newTaskText, setNewTaskText] = useState('');
-  
   const [newTodayTaskText, setNewTodayTaskText] = useState('');
+  const [newTodayTaskTime, setNewTodayTaskTime] = useState('');
+  const [newTodayTaskRecurrence, setNewTodayTaskRecurrence] = useState<'none' | 'daily' | 'weekly' | 'monthly'>('none');
+  
+  const [newTaskText, setNewTaskText] = useState('');
+  const [newTaskTime, setNewTaskTime] = useState('');
+  const [newTaskRecurrence, setNewTaskRecurrence] = useState<'none' | 'daily' | 'weekly' | 'monthly'>('none');
+  
+  const [notifiedTasks, setNotifiedTasks] = useState<Set<string>>(new Set());
   
   // Wrap up modal state
   const [showWrapUp, setShowWrapUp] = useState(false);
   const [hoursStudied, setHoursStudied] = useState(0);
   const [missedTasks, setMissedTasks] = useState<{ id: string, reason: string, customReason: string }[]>([]);
+  const [wrapUpDateStr, setWrapUpDateStr] = useState(getTodayStr());
 
   const REASONS = [
     "Underestimated time",
-    "Procrastinated",
+    "Procrastination",
     "Unexpected personal event",
-    "Stuck on a difficult concept",
+    "Difficult Concept",
     "Other"
   ];
+
+  const checkOverdue = (time?: string) => {
+    if (!time) return false;
+    const now = new Date();
+    const currentHours = now.getHours().toString().padStart(2, '0');
+    const currentMinutes = now.getMinutes().toString().padStart(2, '0');
+    return time < `${currentHours}:${currentMinutes}`;
+  };
+
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+    const interval = setInterval(() => {
+      if (!todayPlan || todayPlan.locked) return;
+      const now = new Date();
+      const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+      todayPlan.tasks.forEach(task => {
+        if (!task.completed && task.reminderTime === timeStr && !notifiedTasks.has(task.id)) {
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification('Task Reminder', { body: task.text });
+          } else toast.success('Reminder: ' + task.text, { icon: '🔔' });
+          setNotifiedTasks(prev => new Set(prev).add(task.id));
+        }
+      });
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [todayPlan, notifiedTasks]);
 
   useEffect(() => {
     loadData();
@@ -86,7 +122,9 @@ export function Planner() {
     const newTask: DailyTask = {
       id: crypto.randomUUID(),
       text: newTodayTaskText.trim(),
-      completed: false
+      completed: false,
+      reminderTime: newTodayTaskTime || undefined,
+      recurrence: newTodayTaskRecurrence
     };
     
     const updated = {
@@ -97,6 +135,8 @@ export function Planner() {
     setTodayPlan(updated);
     await saveDailyPlan(updated);
     setNewTodayTaskText('');
+    setNewTodayTaskTime('');
+    setNewTodayTaskRecurrence('none');
   };
 
   const handleRemoveTodayTask = async (taskId: string) => {
@@ -116,7 +156,9 @@ export function Planner() {
     const newTask: DailyTask = {
       id: crypto.randomUUID(),
       text: newTaskText.trim(),
-      completed: false
+      completed: false,
+      reminderTime: newTaskTime || undefined,
+      recurrence: newTaskRecurrence
     };
     
     const updated = {
@@ -127,6 +169,8 @@ export function Planner() {
     setTomorrowPlan(updated);
     await saveDailyPlan(updated);
     setNewTaskText('');
+    setNewTaskTime('');
+    setNewTaskRecurrence('none');
   };
 
   const handleRemoveTomorrowTask = async (taskId: string) => {
@@ -143,6 +187,18 @@ export function Planner() {
     if (!todayPlan) return;
     const unfinished = todayPlan.tasks.filter(t => !t.completed);
     setMissedTasks(unfinished.map(t => ({ id: t.id, reason: REASONS[0], customReason: '' })));
+    
+    const now = new Date();
+    // Default to yesterday if it's before noon
+    if (now.getHours() < 12) {
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      yesterday.setMinutes(yesterday.getMinutes() - yesterday.getTimezoneOffset());
+      setWrapUpDateStr(yesterday.toISOString().split('T')[0]);
+    } else {
+      setWrapUpDateStr(getTodayStr());
+    }
+
     setShowWrapUp(true);
   };
 
@@ -167,19 +223,25 @@ export function Planner() {
     // 1. Archive today's plan into the history using real date
     const historyPlan: DailyPlan = {
       ...todayPlan,
-      dateStr: getTodayStr(), // assign real date
+      dateStr: wrapUpDateStr, // assign selected date
       tasks: updatedTasks,
       hoursStudied,
+      studyGoalHours: todayPlan.studyGoalHours,
       locked: true,
       notes
     };
     await saveDailyPlan(historyPlan);
 
-    // 2. Move "tomorrow" to "today" ('current')
+    // 2. Move "tomorrow" to "today" ('current') and append recurring
     const nextTodayTasks = tomorrowPlan ? [...tomorrowPlan.tasks] : [];
+    const recurringTasks = todayPlan.tasks
+      .filter(t => t.recurrence && t.recurrence !== 'none')
+      .map(t => ({ ...t, id: crypto.randomUUID(), completed: false }));
+    const combinedTasks = [...nextTodayTasks, ...recurringTasks];
+
     const newTodayPlan: DailyPlan = {
       dateStr: 'current',
-      tasks: nextTodayTasks,
+      tasks: combinedTasks,
       locked: false,
       notes: ''
     };
@@ -230,9 +292,31 @@ export function Planner() {
     return 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 font-bold';
   };
 
+  const onDragEnd = async (result: DropResult) => {
+    const { source, destination } = result;
+    if (!destination) return;
+    
+    if (source.droppableId === 'today' && destination.droppableId === 'today' && todayPlan && !todayPlan.locked) {
+      const items = Array.from(todayPlan.tasks);
+      const [moved] = items.splice(source.index, 1);
+      items.splice(destination.index, 0, moved);
+      const updated = { ...todayPlan, tasks: items };
+      setTodayPlan(updated);
+      await saveDailyPlan(updated);
+    } else if (source.droppableId === 'tomorrow' && destination.droppableId === 'tomorrow' && tomorrowPlan) {
+      const items = Array.from(tomorrowPlan.tasks);
+      const [moved] = items.splice(source.index, 1);
+      items.splice(destination.index, 0, moved);
+      const updated = { ...tomorrowPlan, tasks: items };
+      setTomorrowPlan(updated);
+      await saveDailyPlan(updated);
+    }
+  };
+
   return (
     <div className="flex-1 overflow-y-auto bg-neutral-50 dark:bg-neutral-950 p-4 md:p-8">
-      <div className="max-w-6xl mx-auto">
+      <DragDropContext onDragEnd={onDragEnd}>
+        <div className="max-w-6xl mx-auto">
         <header className="mb-6 md:mb-8">
           <h1 className="text-3xl font-bold tracking-tight text-neutral-900 dark:text-white mb-2">
             Control Room
@@ -278,54 +362,158 @@ export function Planner() {
 
           {/* Center Section: Today's Status & Notes */}
           <div className="bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200 dark:border-neutral-800 p-6 flex flex-col min-h-[400px]">
-            <h2 className="text-xl font-bold mb-4 flex items-center gap-2 text-neutral-900 dark:text-white">
-              <Target className="w-5 h-5 text-emerald-500" />
-              Today's Status
-            </h2>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold flex items-center gap-2 text-neutral-900 dark:text-white">
+                <Target className="w-5 h-5 text-emerald-500" />
+                Today's Status
+              </h2>
+              {todayPlan && (
+                <button
+                  onClick={async () => {
+                    const updated = { ...todayPlan, locked: !todayPlan.locked };
+                    setTodayPlan(updated);
+                    await saveDailyPlan(updated);
+                  }}
+                  className="p-1.5 text-neutral-500 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-lg transition-colors"
+                  title={todayPlan.locked ? "Unlock Day" : "Lock Day"}
+                >
+                  {todayPlan.locked ? <Lock className="w-5 h-5" /> : <Unlock className="w-5 h-5" />}
+                </button>
+              )}
+            </div>
             
             <div className="flex-1 overflow-y-auto mb-4 space-y-4">
               <div>
-                <h3 className="text-sm font-bold text-neutral-500 uppercase tracking-wider mb-2">Targets</h3>
+                <div className="flex justify-between items-center mb-2">
+                  <h3 className="text-sm font-bold text-neutral-500 uppercase tracking-wider">Targets</h3>
+                  <div className="flex items-center gap-2 text-sm text-neutral-500">
+                    <span>Goal:</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      disabled={todayPlan?.locked}
+                      value={todayPlan?.studyGoalHours || ''}
+                      onChange={async (e) => {
+                        if (!todayPlan) return;
+                        const val = parseFloat(e.target.value);
+                        const updated = { ...todayPlan, studyGoalHours: isNaN(val) ? undefined : val };
+                        setTodayPlan(updated);
+                        await saveDailyPlan(updated);
+                      }}
+                      className="w-16 px-2 py-0.5 bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded text-center focus:outline-none"
+                      placeholder="hrs"
+                    />
+                  </div>
+                </div>
                 
                 {!todayPlan?.locked && (
-                  <form onSubmit={handleAddTodayTask} className="flex gap-2 mb-3">
-                    <input
-                      type="text"
-                      value={newTodayTaskText}
-                      onChange={e => setNewTodayTaskText(e.target.value)}
-                      placeholder="Add an urgent task..."
-                      className="flex-1 px-3 py-1.5 bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500"
-                    />
-                    <button 
-                      type="submit"
-                      className="px-3 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 dark:bg-emerald-900/30 dark:hover:bg-emerald-900/50 dark:text-emerald-300 font-bold rounded-lg transition-colors text-sm"
-                    >
-                      Add
-                    </button>
+                  <form onSubmit={handleAddTodayTask} className="flex flex-col gap-2 mb-3 p-3 bg-neutral-100 dark:bg-neutral-800/50 rounded-xl border border-neutral-200 dark:border-neutral-800">
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={newTodayTaskText}
+                        onChange={e => setNewTodayTaskText(e.target.value)}
+                        placeholder="Add an urgent task..."
+                        className="flex-1 px-3 py-1.5 bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500"
+                      />
+                      <button 
+                        type="submit"
+                        className="px-3 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 dark:bg-emerald-900/30 dark:hover:bg-emerald-900/50 dark:text-emerald-300 font-bold rounded-lg text-sm transition-colors"
+                      >
+                        Add
+                      </button>
+                    </div>
+                    <div className="flex gap-3 text-xs">
+                      <div className="flex items-center gap-1.5 text-neutral-500 bg-white dark:bg-neutral-900 px-2 py-1.5 rounded-lg border border-neutral-300 dark:border-neutral-700">
+                        <Clock className="w-3.5 h-3.5" />
+                        <input
+                          type="time"
+                          value={newTodayTaskTime}
+                          onChange={e => setNewTodayTaskTime(e.target.value)}
+                          className="bg-transparent focus:outline-none"
+                        />
+                      </div>
+                      <div className="flex items-center gap-1.5 text-neutral-500 bg-white dark:bg-neutral-900 px-2 py-1.5 rounded-lg border border-neutral-300 dark:border-neutral-700">
+                        <Repeat className="w-3.5 h-3.5" />
+                        <select
+                          value={newTodayTaskRecurrence}
+                          onChange={e => setNewTodayTaskRecurrence(e.target.value as any)}
+                          className="bg-transparent focus:outline-none appearance-none"
+                        >
+                          <option value="none">Once</option>
+                          <option value="daily">Daily</option>
+                          <option value="weekly">Weekly</option>
+                          <option value="monthly">Monthly</option>
+                        </select>
+                      </div>
+                    </div>
                   </form>
                 )}
 
                 {todayPlan?.tasks.length === 0 ? (
                   <p className="text-sm text-neutral-400 italic">No targets set for today. Add some above!</p>
                 ) : (
-                  <div className="space-y-2">
-                    {todayPlan?.tasks.map(t => (
-                      <div key={t.id} className="flex items-start justify-between gap-2 p-2 rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/50 group">
-                        <div className="flex gap-2 text-sm text-neutral-700 dark:text-neutral-300 pt-0.5">
-                          {t.completed ? <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" /> : <Circle className="w-4 h-4 text-neutral-300 dark:text-neutral-600 shrink-0" />}
-                          <span className={cn(t.completed && "line-through text-neutral-400")}>{t.text}</span>
-                        </div>
-                        {!todayPlan?.locked && (
-                          <button
-                            onClick={() => handleRemoveTodayTask(t.id)}
-                            className="opacity-0 lg:group-hover:opacity-100 text-neutral-400 hover:text-red-500 transition-all p-1 rounded md:opacity-100 shrink-0"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        )}
+                  <Droppable droppableId="today">
+                    {(provided) => (
+                      <div className="space-y-2" {...provided.droppableProps} ref={provided.innerRef}>
+                        {todayPlan?.tasks.map((t, index) => {
+                          // @ts-expect-error
+                          return (<Draggable key={t.id} draggableId={t.id} index={index} isDragDisabled={todayPlan.locked}>
+                            {(provided) => (
+                              <div
+                                ref={provided.innerRef}
+                                {...provided.draggableProps}
+                                className={cn(
+                                  "flex items-start justify-between gap-2 p-2 rounded-lg bg-white dark:bg-neutral-900 border border-neutral-100 dark:border-neutral-800 hover:border-neutral-300 dark:hover:border-neutral-700 group transition-colors",
+                                  !t.completed && checkOverdue(t.reminderTime) && "border-red-300 bg-red-50 dark:border-red-900/50 dark:bg-red-900/10"
+                                )}
+                              >
+                                <div className="flex items-start gap-2 text-sm text-neutral-700 dark:text-neutral-300">
+                                  <div {...provided.dragHandleProps} className="text-neutral-400 mt-1 cursor-grab opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <GripVertical className="w-4 h-4" />
+                                  </div>
+                                  <button onClick={async () => {
+                                    if (todayPlan.locked) return;
+                                    const updated = { ...todayPlan, tasks: todayPlan.tasks.map(task => task.id === t.id ? {...task, completed: !task.completed} : task) };
+                                    setTodayPlan(updated);
+                                    await saveDailyPlan(updated);
+                                  }} className="mt-0.5">
+                                    {t.completed ? <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" /> : <Circle className="w-4 h-4 text-neutral-300 dark:text-neutral-600 shrink-0" />}
+                                  </button>
+                                  <div className="flex flex-col">
+                                    <span className={cn(t.completed && "line-through text-neutral-400")}>{t.text}</span>
+                                    <div className="flex items-center gap-3 mt-1">
+                                      {t.reminderTime && (
+                                        <span className={cn("text-xs flex items-center gap-1", (!t.completed && checkOverdue(t.reminderTime)) ? "text-red-500 font-medium" : "text-neutral-400")}>
+                                          <Clock className="w-3 h-3" /> {t.reminderTime}
+                                          {(!t.completed && checkOverdue(t.reminderTime)) && <AlertCircle className="w-3 h-3" />}
+                                        </span>
+                                      )}
+                                      {t.recurrence && t.recurrence !== 'none' && (
+                                        <span className="text-xs text-neutral-400 flex items-center gap-1">
+                                          <Repeat className="w-3 h-3" /> {t.recurrence}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                                {!todayPlan?.locked && (
+                                  <button
+                                    onClick={() => handleRemoveTodayTask(t.id)}
+                                    className="opacity-0 lg:group-hover:opacity-100 text-neutral-400 hover:text-red-500 transition-all p-1 rounded md:opacity-100 shrink-0"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </Draggable>);
+                        })}
+                        {provided.placeholder}
                       </div>
-                    ))}
-                  </div>
+                    )}
+                  </Droppable>
                 )}
               </div>
 
@@ -357,43 +545,106 @@ export function Planner() {
               Plan Tomorrow
             </h2>
             
-            <form onSubmit={handleAddTomorrowTask} className="flex gap-2 mb-4">
-              <input
-                type="text"
-                value={newTaskText}
-                onChange={e => setNewTaskText(e.target.value)}
-                placeholder="What to do tomorrow?"
-                className="flex-1 px-3 py-2 bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 rounded-xl text-sm focus:ring-2 focus:ring-purple-500"
-              />
-              <button 
-                type="submit"
-                className="px-4 py-2 bg-purple-100 hover:bg-purple-200 text-purple-700 dark:bg-purple-900/30 dark:hover:bg-purple-900/50 dark:text-purple-300 font-bold rounded-xl transition-colors text-sm"
-              >
-                Add
-              </button>
+            <form onSubmit={handleAddTomorrowTask} className="flex flex-col gap-2 mb-4 p-3 bg-neutral-100 dark:bg-neutral-800/50 rounded-xl border border-neutral-200 dark:border-neutral-800">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newTaskText}
+                  onChange={e => setNewTaskText(e.target.value)}
+                  placeholder="What to do tomorrow?"
+                  className="flex-1 px-3 py-1.5 bg-white dark:bg-neutral-900 border border-neutral-300 dark:border-neutral-700 rounded-lg text-sm focus:ring-2 focus:ring-purple-500"
+                />
+                <button 
+                  type="submit"
+                  className="px-4 py-1.5 bg-purple-100 hover:bg-purple-200 text-purple-700 dark:bg-purple-900/30 dark:hover:bg-purple-900/50 dark:text-purple-300 font-bold rounded-lg transition-colors text-sm"
+                >
+                  Add
+                </button>
+              </div>
+              <div className="flex gap-3 text-xs">
+                <div className="flex items-center gap-1.5 text-neutral-500 bg-white dark:bg-neutral-900 px-2 py-1.5 rounded-lg border border-neutral-300 dark:border-neutral-700">
+                  <Clock className="w-3.5 h-3.5" />
+                  <input
+                    type="time"
+                    value={newTaskTime}
+                    onChange={e => setNewTaskTime(e.target.value)}
+                    className="bg-transparent focus:outline-none"
+                  />
+                </div>
+                <div className="flex items-center gap-1.5 text-neutral-500 bg-white dark:bg-neutral-900 px-2 py-1.5 rounded-lg border border-neutral-300 dark:border-neutral-700">
+                  <Repeat className="w-3.5 h-3.5" />
+                  <select
+                    value={newTaskRecurrence}
+                    onChange={e => setNewTaskRecurrence(e.target.value as any)}
+                    className="bg-transparent focus:outline-none appearance-none"
+                  >
+                    <option value="none">Once</option>
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                  </select>
+                </div>
+              </div>
             </form>
 
             <div className="flex-1 overflow-y-auto space-y-2">
-              {tomorrowPlan?.tasks.length === 0 && (
+              {tomorrowPlan?.tasks.length === 0 ? (
                 <div className="text-center py-8 text-neutral-400 text-sm">
                   Tomorrow's canvas is blank.
                 </div>
+              ) : (
+                <Droppable droppableId="tomorrow">
+                  {(provided) => (
+                    <div className="space-y-2" {...provided.droppableProps} ref={provided.innerRef}>
+                      {tomorrowPlan?.tasks.map((t, index) => {
+                        // @ts-expect-error
+                        return (<Draggable key={t.id} draggableId={t.id} index={index}>
+                          {(provided) => (
+                            <div
+                              ref={provided.innerRef}
+                              {...provided.draggableProps}
+                              className="flex items-start justify-between gap-2 p-2 bg-neutral-50 dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 rounded-lg group transition-colors hover:border-neutral-300 dark:hover:border-neutral-700"
+                            >
+                              <div className="flex items-start gap-2 text-sm text-neutral-700 dark:text-neutral-300">
+                                <div {...provided.dragHandleProps} className="text-neutral-400 mt-1 cursor-grab opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <GripVertical className="w-4 h-4" />
+                                </div>
+                                <div className="flex flex-col mt-0.5">
+                                  <span>{t.text}</span>
+                                  <div className="flex items-center gap-3 mt-1">
+                                    {t.reminderTime && (
+                                      <span className="text-xs text-neutral-400 flex items-center gap-1">
+                                        <Clock className="w-3 h-3" /> {t.reminderTime}
+                                      </span>
+                                    )}
+                                    {t.recurrence && t.recurrence !== 'none' && (
+                                      <span className="text-xs text-neutral-400 flex items-center gap-1">
+                                        <Repeat className="w-3 h-3" /> {t.recurrence}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => handleRemoveTomorrowTask(t.id)}
+                                className="opacity-0 group-hover:opacity-100 text-neutral-400 hover:text-red-500 transition-all p-1 rounded"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          )}
+                        </Draggable>);
+                      })}
+                      {provided.placeholder}
+                    </div>
+                  )}
+                </Droppable>
               )}
-              {tomorrowPlan?.tasks.map(t => (
-                <div key={t.id} className="flex items-start justify-between gap-2 p-3 bg-neutral-50 dark:bg-neutral-950 rounded-lg group">
-                  <span className="text-sm text-neutral-700 dark:text-neutral-300">{t.text}</span>
-                  <button
-                    onClick={() => handleRemoveTomorrowTask(t.id)}
-                    className="opacity-0 group-hover:opacity-100 text-neutral-400 hover:text-red-500 transition-all p-1 rounded"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              ))}
             </div>
           </div>
         </div>
-      </div>
+        </div>
+      </DragDropContext>
 
       {/* End Day Wrap-Up Modal */}
       {showWrapUp && (
@@ -409,7 +660,18 @@ export function Planner() {
             <div className="p-6 overflow-y-auto flex-1 space-y-6">
               <div>
                 <label className="block text-sm font-bold text-neutral-700 dark:text-neutral-300 mb-2">
-                  Approximate hours studied today
+                  Date
+                </label>
+                <input 
+                  type="date" 
+                  value={wrapUpDateStr}
+                  onChange={(e) => setWrapUpDateStr(e.target.value)}
+                  className="w-full p-2 bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg text-neutral-900 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-neutral-700 dark:text-neutral-300 mb-2">
+                  Approximate hours studied today {todayPlan?.studyGoalHours ? `(Goal: ${todayPlan.studyGoalHours}h)` : ''}
                 </label>
                 <div className="flex items-center gap-4">
                   <input 
@@ -515,7 +777,10 @@ export function Planner() {
                 </div>
                 <div className="text-right">
                   <p className="text-sm text-neutral-500">Study Time</p>
-                  <p className="text-2xl font-bold text-neutral-900 dark:text-white">{showHistoryModal.hoursStudied || 0}h</p>
+                  <p className="text-2xl font-bold text-neutral-900 dark:text-white">
+                    {showHistoryModal.hoursStudied || 0}h
+                    {showHistoryModal.studyGoalHours ? <span className="text-sm text-neutral-400 font-medium"> / {showHistoryModal.studyGoalHours}h</span> : null}
+                  </p>
                 </div>
               </div>
 

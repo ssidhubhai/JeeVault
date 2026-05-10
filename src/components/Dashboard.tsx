@@ -198,37 +198,6 @@ export function Dashboard({ onViewChange, refreshTrigger, onSelectSubject, onSel
           )}
         </div>
 
-        {/* Active Launchpad */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <button
-            onClick={() => onViewChange('revise')}
-            className="group relative overflow-hidden bg-gradient-to-br from-amber-500 to-orange-600 p-6 rounded-2xl text-left text-white shadow-lg hover:shadow-xl transition-all hover:-translate-y-1"
-          >
-            <div className="absolute top-0 right-0 p-6 opacity-20 group-hover:scale-110 transition-transform">
-              <Calendar className="w-24 h-24" />
-            </div>
-            <h3 className="text-2xl font-bold mb-2">Start Revision</h3>
-            <p className="text-amber-100 mb-6 max-w-[80%]">Knock out your {stats.reviseToday} due questions using spaced repetition.</p>
-            <div className="inline-flex items-center gap-2 bg-white/20 hover:bg-white/30 px-4 py-2 rounded-xl font-medium backdrop-blur-sm transition-colors">
-              <Play className="w-4 h-4" /> Begin Session
-            </div>
-          </button>
-
-          <button
-            onClick={() => onViewChange('inbox')}
-            className="group relative overflow-hidden bg-gradient-to-br from-purple-500 to-indigo-600 p-6 rounded-2xl text-left text-white shadow-lg hover:shadow-xl transition-all hover:-translate-y-1"
-          >
-            <div className="absolute top-0 right-0 p-6 opacity-20 group-hover:scale-110 transition-transform">
-              <Inbox className="w-24 h-24" />
-            </div>
-            <h3 className="text-2xl font-bold mb-2">Clear Inbox</h3>
-            <p className="text-purple-100 mb-6 max-w-[80%]">Categorize your {stats.inbox} recently saved screenshots.</p>
-            <div className="inline-flex items-center gap-2 bg-white/20 hover:bg-white/30 px-4 py-2 rounded-xl font-medium backdrop-blur-sm transition-colors">
-              <ArrowRight className="w-4 h-4" /> Process Inbox
-            </div>
-          </button>
-        </div>
-
         {/* Subject / Chapter Navigation */}
         <div>
           {!activeSubject ? (
