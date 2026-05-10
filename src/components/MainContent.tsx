@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { Download, Trash2, Maximize2, X, CheckCircle, RotateCcw, Search, CheckSquare, Square, Play, Tag as TagIcon, FileText, ArrowUpDown, Clock, Info, ZoomIn, ZoomOut, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Download, Trash2, Maximize2, X, CheckCircle, RotateCcw, Search, CheckSquare, Square, Play, Tag as TagIcon, FileText, ArrowUpDown, Clock, Info, ZoomIn, ZoomOut, ChevronLeft, ChevronRight, MoreVertical } from 'lucide-react';
 import { Subject } from '../App';
 import { getQuestionsByChapter, deleteQuestion, deleteQuestions, updateQuestion, addQuestion, Question } from '../lib/db';
 import { toast } from 'react-hot-toast';
@@ -38,13 +38,18 @@ export function MainContent({ selectedSubject, selectedChapter, refreshTrigger, 
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'tags'>('newest');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
   
+  const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
+  const [showFullscreenMenu, setShowFullscreenMenu] = useState(false);
+
   // Practice Mode State
   const [isPracticeMode, setIsPracticeMode] = useState(false);
   const [practiceIndex, setPracticeIndex] = useState(0);
   const [timeSpent, setTimeSpent] = useState(0);
   const [showConfidence, setShowConfidence] = useState(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const pressTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     const loadQuestions = async () => {
@@ -368,14 +373,14 @@ export function MainContent({ selectedSubject, selectedChapter, refreshTrigger, 
 
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden relative">
-      <header className="flex flex-col p-4 md:p-6 border-b border-neutral-200 dark:border-neutral-800 bg-white/50 dark:bg-neutral-950/50 backdrop-blur-md gap-4">
+      <header className="flex flex-col p-4 md:px-6 md:py-3 border-b border-neutral-200 dark:border-neutral-800 bg-white/50 dark:bg-neutral-950/50 backdrop-blur-md gap-3">
         
         {/* Main View Toggle */}
-        <div className="flex border-b border-neutral-200 dark:border-neutral-800 -mx-4 -mt-4 mb-2 px-4 pt-2">
+        <div className="flex border-b border-neutral-200 dark:border-neutral-800 -mx-4 md:-mx-6 -mt-3 mb-0 px-4 md:px-6 pt-1">
           <button
             onClick={() => setViewMode('questions')}
             className={cn(
-              "px-4 py-3 text-sm font-bold border-b-2 transition-colors",
+              "px-4 py-2.5 text-sm font-bold border-b-2 transition-colors",
               viewMode === 'questions' ? "border-black dark:border-white text-black dark:text-white" : "border-transparent text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
             )}
           >
@@ -384,7 +389,7 @@ export function MainContent({ selectedSubject, selectedChapter, refreshTrigger, 
           <button
             onClick={() => setViewMode('resources')}
             className={cn(
-              "px-4 py-3 text-sm font-bold border-b-2 transition-colors",
+              "px-4 py-2.5 text-sm font-bold border-b-2 transition-colors",
               viewMode === 'resources' ? "border-black dark:border-white text-black dark:text-white" : "border-transparent text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300"
             )}
           >
@@ -393,10 +398,11 @@ export function MainContent({ selectedSubject, selectedChapter, refreshTrigger, 
         </div>
 
         {viewMode === 'questions' && (
-          <>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-baseline gap-2 flex-wrap">
                 <p className="text-sm text-neutral-500 dark:text-neutral-400 font-medium">{selectedSubject}</p>
+                <span className="hidden sm:inline text-neutral-500">/</span>
                 <h2 className="text-xl md:text-2xl font-bold tracking-tight">{selectedChapter}</h2>
               </div>
               
@@ -432,7 +438,7 @@ export function MainContent({ selectedSubject, selectedChapter, refreshTrigger, 
                 setIsPracticeMode(true);
               }}
               disabled={displayedQuestions.length === 0}
-              className="flex justify-center items-center gap-2 px-3 md:px-4 py-2 bg-blue-600 text-white rounded-lg font-medium text-sm hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+              className="flex justify-center items-center gap-2 px-3 md:px-4 py-2 bg-blue-600 text-white rounded-lg font-medium text-sm hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm md:ml-auto"
             >
               <Play className="w-4 h-4" fill="currentColor" />
               <span className="hidden sm:inline">Practice</span>
@@ -446,10 +452,20 @@ export function MainContent({ selectedSubject, selectedChapter, refreshTrigger, 
               <Download className="w-4 h-4" />
               <span className="hidden sm:inline">Export PDF</span>
             </button>
+
+            <button
+              onClick={() => setShowMobileFilters(!showMobileFilters)}
+              className="md:hidden flex justify-center items-center p-2 bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-300 rounded-lg"
+            >
+              <Search className="w-5 h-5" />
+            </button>
           </div>
         </div>
 
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mt-2">
+        <div className={cn(
+          "flex flex-col lg:flex-row lg:items-center justify-between gap-4 mt-2",
+          showMobileFilters ? "block" : "hidden md:flex"
+        )}>
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 flex-1 max-w-2xl">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-neutral-400" />
@@ -525,7 +541,7 @@ export function MainContent({ selectedSubject, selectedChapter, refreshTrigger, 
             )}
           </div>
         </div>
-          </>
+          </div>
         )}
       </header>
 
@@ -552,28 +568,55 @@ export function MainContent({ selectedSubject, selectedChapter, refreshTrigger, 
             </div>
           </div>
         ) : (
-          <div className="columns-1 sm:columns-2 lg:columns-3 xl:columns-4 gap-6">
+          <div className="grid grid-cols-3 gap-2 md:block md:columns-2 lg:columns-3 xl:columns-4 md:gap-6 pb-2">
             {displayedQuestions.map((q) => {
               const isSelected = selectedIds.has(q.id);
               return (
                 <div 
                   key={q.id} 
+                  onTouchStart={() => {
+                    pressTimerRef.current = setTimeout(() => {
+                      if (!isSelectionMode) setIsSelectionMode(true);
+                      toggleSelection(q.id);
+                    }, 500);
+                  }}
+                  onTouchEnd={() => {
+                    if (pressTimerRef.current) clearTimeout(pressTimerRef.current);
+                  }}
+                  onTouchCancel={() => {
+                    if (pressTimerRef.current) clearTimeout(pressTimerRef.current);
+                  }}
+                  onContextMenu={(e) => {
+                    if (window.innerWidth < 768) {
+                      e.preventDefault();
+                    }
+                  }}
+                  onClick={() => {
+                    if (isSelectionMode) {
+                      toggleSelection(q.id);
+                    } else {
+                      setFullscreenIndex(displayedQuestions.findIndex(dq => dq.id === q.id));
+                      setShowFullscreenDetails(false);
+                      setZoomLevel(1);
+                    }
+                  }}
                   className={cn(
-                    "break-inside-avoid mb-6 group relative bg-white dark:bg-neutral-900 rounded-xl shadow-sm border overflow-hidden transition-all duration-200",
+                    "break-inside-avoid relative bg-neutral-100 dark:bg-neutral-900 rounded-xl shadow-sm border overflow-hidden transition-all duration-200 cursor-pointer mb-0 md:mb-6 md:bg-white",
+                    "w-full h-[130px] md:w-auto md:h-auto",
                     isSelected 
-                      ? "border-blue-500 ring-2 ring-blue-500/20" 
+                      ? "border-blue-500 ring-4 ring-blue-500/20 shadow-blue-500/30" 
                       : "border-neutral-200 dark:border-neutral-800 hover:shadow-md"
                   )}
                 >
                   <img 
                     src={q.imageBase64} 
                     alt="Question" 
-                    className="w-full h-auto object-cover"
+                    className="w-full h-full object-cover"
                     loading="lazy"
                   />
                   
                   {(q.tags?.length || q.notes) && (
-                    <div className="p-3 bg-neutral-50 dark:bg-neutral-900/80 border-t border-neutral-100 dark:border-neutral-800">
+                    <div className="hidden md:block p-3 bg-neutral-50 dark:bg-neutral-900/80 border-t border-neutral-100 dark:border-neutral-800">
                       {q.tags && q.tags.length > 0 && (
                         <div className="flex flex-wrap gap-1.5 mb-2">
                           {q.tags.map(t => (
@@ -594,19 +637,16 @@ export function MainContent({ selectedSubject, selectedChapter, refreshTrigger, 
 
                   <div className={cn(
                     "absolute inset-0 bg-black/40 transition-opacity duration-200 flex items-center justify-center gap-3 backdrop-blur-[2px]",
-                    isSelectionMode || isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                    isSelectionMode || isSelected ? "opacity-100" : "opacity-0 md:group-hover:opacity-100" // Group hover only on desktop if we had group, but let's hide overlay except in selection mode on mobile
                   )}>
                     {isSelectionMode ? (
-                      <button
-                        onClick={() => toggleSelection(q.id)}
-                        className="p-3 text-white hover:scale-110 transition-transform"
-                      >
-                        {isSelected ? <CheckSquare className="w-8 h-8 text-blue-400" /> : <Square className="w-8 h-8" />}
-                      </button>
+                      <div className="p-3 text-white">
+                        {isSelected ? <CheckSquare className="w-8 h-8 text-blue-400 bg-white/20 rounded-lg p-1 backdrop-blur-md" /> : <Square className="w-8 h-8 opacity-50" />}
+                      </div>
                     ) : (
-                      <>
+                      <div className="hidden md:flex items-center justify-center gap-3 w-full h-full">
                         <button
-                          onClick={() => handleToggleSolved(q)}
+                          onClick={(e) => { e.stopPropagation(); handleToggleSolved(q); }}
                           className={cn(
                             "p-2 text-white rounded-full backdrop-blur-md transition-colors",
                             q.isSolved 
@@ -618,26 +658,23 @@ export function MainContent({ selectedSubject, selectedChapter, refreshTrigger, 
                           {q.isSolved ? <RotateCcw className="w-5 h-5" /> : <CheckCircle className="w-5 h-5" />}
                         </button>
                         <button
-                          onClick={() => {
-                            setFullscreenIndex(displayedQuestions.findIndex(dq => dq.id === q.id));
-                            setShowFullscreenDetails(false);
-                            setZoomLevel(1);
-                          }}
-                          className="p-2 bg-white/10 hover:bg-white/20 text-white rounded-full backdrop-blur-md transition-colors"
-                          title="Expand"
-                        >
-                          <Maximize2 className="w-5 h-5" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(q.id)}
+                          onClick={(e) => { e.stopPropagation(); handleDelete(q.id); }}
                           className="p-2 bg-red-500/80 hover:bg-red-500 text-white rounded-full backdrop-blur-md transition-colors"
                           title="Delete"
                         >
                           <Trash2 className="w-5 h-5" />
                         </button>
-                      </>
+                      </div>
                     )}
                   </div>
+                  
+                  {/* Indicator icons for mobile to show it has notes/tags */}
+                  {!isSelectionMode && (q.tags?.length || q.notes) && (
+                    <div className="absolute bottom-2 right-2 md:hidden flex items-center gap-1">
+                      {q.tags && q.tags.length > 0 && <span className="bg-black/60 text-white p-1 rounded-full"><TagIcon className="w-3 h-3" /></span>}
+                      {q.notes && <span className="bg-black/60 text-white p-1 rounded-full"><FileText className="w-3 h-3" /></span>}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -648,23 +685,84 @@ export function MainContent({ selectedSubject, selectedChapter, refreshTrigger, 
       {fullscreenIndex !== null && displayedQuestions[fullscreenIndex] && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 backdrop-blur-md">
           {/* Top Controls */}
-          <div className="absolute top-4 right-4 flex items-center gap-3 z-20">
+          <div className="absolute top-4 right-4 flex items-center gap-2 z-30">
+            <div className="md:hidden relative">
+              <button 
+                onClick={() => setShowFullscreenMenu(!showFullscreenMenu)}
+                className="p-2 text-white/70 hover:text-white bg-black/50 hover:bg-black/80 rounded-full transition-colors"
+              >
+                <MoreVertical className="w-5 h-5" />
+              </button>
+              
+              {showFullscreenMenu && (
+                <div className="absolute right-0 top-12 w-48 bg-neutral-900 rounded-xl shadow-xl overflow-hidden border border-neutral-800">
+                  <button 
+                    onClick={() => {
+                      setEditingQuestion(displayedQuestions[fullscreenIndex]);
+                      setFullscreenIndex(null);
+                      setZoomLevel(1);
+                      setShowFullscreenMenu(false);
+                    }}
+                    className="w-full text-left px-4 py-3 text-sm text-neutral-200 hover:bg-neutral-800 flex items-center gap-2"
+                  >
+                    <FileText className="w-4 h-4" /> Edit Tags & Notes
+                  </button>
+                  <button 
+                    onClick={() => {
+                      handleDelete(displayedQuestions[fullscreenIndex].id);
+                      setFullscreenIndex(null);
+                      setZoomLevel(1);
+                      setShowFullscreenMenu(false);
+                    }}
+                    className="w-full text-left px-4 py-3 text-sm text-red-400 hover:bg-neutral-800 flex items-center gap-2"
+                  >
+                    <Trash2 className="w-4 h-4" /> Delete
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="hidden md:flex items-center gap-2">
+              <button 
+                onClick={() => {
+                  setEditingQuestion(displayedQuestions[fullscreenIndex]);
+                  setFullscreenIndex(null);
+                  setZoomLevel(1);
+                }}
+                className="p-2 text-white/70 hover:text-white bg-black/50 hover:bg-black/80 rounded-full transition-colors"
+                title="Edit Tags & Notes"
+              >
+                <FileText className="w-5 h-5" />
+              </button>
+              <button 
+                onClick={() => {
+                  handleDelete(displayedQuestions[fullscreenIndex].id);
+                  setFullscreenIndex(null);
+                  setZoomLevel(1);
+                }}
+                className="p-2 text-white/70 hover:text-red-500 bg-black/50 hover:bg-black/80 rounded-full transition-colors"
+                title="Delete"
+              >
+                <Trash2 className="w-5 h-5" />
+              </button>
+            </div>
+
             <button 
               onClick={() => setZoomLevel(prev => Math.max(prev - 0.5, 0.5))}
-              className="p-2 text-white/70 hover:text-white bg-black/50 hover:bg-black/80 rounded-full transition-colors"
+              className="hidden md:block p-2 text-white/70 hover:text-white bg-black/50 hover:bg-black/80 rounded-full transition-colors"
               title="Zoom Out (-)"
             >
               <ZoomOut className="w-5 h-5" />
             </button>
-            <span className="text-white/70 text-sm font-mono w-12 text-center">{Math.round(zoomLevel * 100)}%</span>
+            <span className="hidden md:inline text-white/70 text-sm font-mono w-12 text-center">{Math.round(zoomLevel * 100)}%</span>
             <button 
               onClick={() => setZoomLevel(prev => Math.min(prev + 0.5, 4))}
-              className="p-2 text-white/70 hover:text-white bg-black/50 hover:bg-black/80 rounded-full transition-colors"
+              className="hidden md:block p-2 text-white/70 hover:text-white bg-black/50 hover:bg-black/80 rounded-full transition-colors"
               title="Zoom In (+)"
             >
               <ZoomIn className="w-5 h-5" />
             </button>
-            <div className="w-px h-6 bg-white/20 mx-1" />
+            <div className="w-px h-6 bg-white/20 mx-1 hidden md:block" />
             <button 
               onClick={() => setShowFullscreenDetails(!showFullscreenDetails)}
               className={cn(
@@ -679,8 +777,9 @@ export function MainContent({ selectedSubject, selectedChapter, refreshTrigger, 
               onClick={() => {
                 setFullscreenIndex(null);
                 setZoomLevel(1);
+                setShowFullscreenMenu(false);
               }}
-              className="p-2 text-white/70 hover:text-white bg-black/50 hover:bg-black/80 rounded-full transition-colors ml-2"
+              className="p-2 text-white/70 hover:text-white bg-black/50 hover:bg-black/80 rounded-full transition-colors ml-1"
               title="Close (Esc)"
             >
               <X className="w-6 h-6" />
@@ -711,9 +810,9 @@ export function MainContent({ selectedSubject, selectedChapter, refreshTrigger, 
             </button>
           )}
           
-          <div className="w-full h-full flex items-center justify-center overflow-hidden relative">
+          <div className="w-full h-full overflow-auto touch-pan-x touch-pan-y">
             <div 
-              className="transition-transform duration-200 ease-out flex items-center justify-center w-full h-full p-12"
+              className="transition-transform duration-200 ease-out flex items-center justify-center min-w-full min-h-full p-4 md:p-12"
               style={{ transform: `scale(${zoomLevel})` }}
             >
               <img 
@@ -725,7 +824,7 @@ export function MainContent({ selectedSubject, selectedChapter, refreshTrigger, 
             
             {/* Details Panel Overlay */}
             {showFullscreenDetails && (
-              <div className="absolute bottom-8 left-8 max-w-sm bg-neutral-900/90 backdrop-blur-xl rounded-2xl border border-white/10 p-6 shadow-2xl z-30 animate-in fade-in slide-in-from-bottom-4">
+              <div className="absolute bottom-8 left-4 right-4 md:left-8 md:right-auto max-w-sm bg-neutral-900/90 backdrop-blur-xl rounded-2xl border border-white/10 p-6 shadow-2xl z-30 animate-in fade-in slide-in-from-bottom-4">
                 <div className="mb-4">
                   <h3 className="text-white font-bold text-lg mb-1">{displayedQuestions[fullscreenIndex].chapter}</h3>
                   <p className="text-neutral-400 text-sm">{displayedQuestions[fullscreenIndex].subject}</p>
@@ -733,7 +832,7 @@ export function MainContent({ selectedSubject, selectedChapter, refreshTrigger, 
 
                 {displayedQuestions[fullscreenIndex].tags && displayedQuestions[fullscreenIndex].tags.length > 0 && (
                   <div className="mb-4">
-                    <h4 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">Tags</h4>
+                     <h4 className="text-xs font-semibold text-neutral-500 uppercase tracking-wider mb-2">Tags</h4>
                     <div className="flex flex-wrap gap-2">
                       {displayedQuestions[fullscreenIndex].tags.map(t => (
                         <span key={t} className="px-2 py-1 bg-white/10 text-white rounded-md text-xs font-medium">
@@ -830,6 +929,106 @@ export function MainContent({ selectedSubject, selectedChapter, refreshTrigger, 
               Skip
             </button>
           </footer>
+        </div>
+      )}
+
+      {/* Edit Question Modal */}
+      {editingQuestion && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+          <div className="bg-white dark:bg-neutral-900 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="p-4 border-b border-neutral-200 dark:border-neutral-800 flex items-center justify-between">
+              <h3 className="font-bold text-lg">Edit Details</h3>
+              <button 
+                onClick={() => setEditingQuestion(null)}
+                className="p-2 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 bg-neutral-100 dark:bg-neutral-800 rounded-full"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto flex-1 space-y-6">
+              <div>
+                <label className="block text-sm font-semibold mb-2">Subject / Chapter</label>
+                <div className="p-3 bg-neutral-50 dark:bg-neutral-800 rounded-xl text-sm border border-neutral-200 dark:border-neutral-700">
+                  <span className="font-medium text-blue-600 dark:text-blue-400">{editingQuestion.subject}</span>
+                  <span className="text-neutral-400 mx-2">/</span>
+                  <span className="text-neutral-700 dark:text-neutral-300">{editingQuestion.chapter}</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold mb-2">Tags</label>
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {editingQuestion.tags?.map(t => (
+                    <span key={t} className="px-3 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-xl text-sm font-medium flex items-center gap-1 border border-blue-200 dark:border-blue-800">
+                      {t}
+                      <button 
+                        onClick={() => {
+                          setEditingQuestion({
+                            ...editingQuestion,
+                            tags: (editingQuestion.tags || []).filter(tag => tag !== t)
+                          });
+                        }}
+                        className="ml-1 hover:text-blue-800 dark:hover:text-blue-200"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+                <select
+                  className="w-full p-3 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val && !editingQuestion.tags?.includes(val)) {
+                      setEditingQuestion({
+                        ...editingQuestion,
+                        tags: [...(editingQuestion.tags || []), val]
+                      });
+                    }
+                    e.target.value = '';
+                  }}
+                  defaultValue=""
+                >
+                  <option value="" disabled>Add existing tag...</option>
+                  {availableTags.filter(t => !editingQuestion.tags?.includes(t)).map(t => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+                <div className="mt-2 text-xs text-neutral-500">
+                  (Manage tags in the sidebar)
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold mb-2">Notes</label>
+                <textarea
+                  className="w-full p-4 border border-neutral-200 dark:border-neutral-700 rounded-xl bg-white dark:bg-neutral-900 text-sm focus:ring-2 focus:ring-blue-500 outline-none min-h-[120px] resize-none"
+                  placeholder="Add your notes here..."
+                  value={editingQuestion.notes || ''}
+                  onChange={(e) => setEditingQuestion({ ...editingQuestion, notes: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900">
+              <button
+                onClick={async () => {
+                  try {
+                    await updateQuestion(editingQuestion);
+                    toast.success('Updated successfully');
+                    setEditingQuestion(null);
+                    onRefresh();
+                  } catch (error) {
+                    toast.error('Failed to update question');
+                  }
+                }}
+                className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold transition-all shadow-lg shadow-blue-500/20"
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

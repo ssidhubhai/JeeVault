@@ -8,6 +8,7 @@ import 'react-image-crop/dist/ReactCrop.css';
 
 interface PasteModalProps {
   imageUrl: string;
+  queueCount?: number;
   onClose: () => void;
   onSave: (subject: Subject | '', chapter: string, tags: string[], notes: string, isUncategorized?: boolean, croppedImageUrl?: string) => void;
   initialSubject?: Subject | null;
@@ -15,7 +16,7 @@ interface PasteModalProps {
   availableTags?: string[];
 }
 
-export function PasteModal({ imageUrl, onClose, onSave, initialSubject, initialChapter, availableTags = QUICK_TAGS }: PasteModalProps) {
+export function PasteModal({ imageUrl, queueCount = 0, onClose, onSave, initialSubject, initialChapter, availableTags = QUICK_TAGS }: PasteModalProps) {
   const [subject, setSubject] = useState<Subject>(initialSubject || 'Physics');
   const [classType, setClassType] = useState<'Class 11' | 'Class 12'>(() => {
     if (initialSubject && initialChapter) {
@@ -205,6 +206,7 @@ export function PasteModal({ imageUrl, onClose, onSave, initialSubject, initialC
         <div className="flex items-center justify-between p-4 border-b border-neutral-200 dark:border-neutral-800">
           <h2 className="text-lg font-semibold flex items-center gap-2">
             Save Question
+            {queueCount > 0 && <span className="text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 px-2 py-0.5 rounded-full">1 of {queueCount + 1}</span>}
             <button 
               onClick={() => setIsCropping(!isCropping)}
               className={cn(

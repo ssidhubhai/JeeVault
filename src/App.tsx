@@ -48,14 +48,60 @@ export default function App() {
     }
   }, []);
 
+  const [pastedImages, setPastedImages] = useState<string[]>([]);
+  const [currentPasteIndex, setCurrentPasteIndex] = useState(0);
+
+  // ... Update handleImageUpload ...
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setPastedImage(event.target?.result as string);
-      };
-      reader.readAsDataURL(file);
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      const promises = Array.from(files).map(file => {
+        return new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            resolve(event.target?.result as string);
+          };
+          reader.readAsDataURL(file);
+        });
+      });
+      
+      Promise.all(promises).then(async base64Images => {
+        const isMobile = window.innerWidth < 768;
+        if (isMobile) {
+          const isInboxOrDashboard = currentView !== 'vault' || !selectedChapter || !selectedSubject;
+          const subjectToSave = isInboxOrDashboard ? '' : selectedSubject;
+          const chapterToSave = isInboxOrDashboard ? '' : selectedChapter;
+          const isUncategorized = isInboxOrDashboard;
+
+          for (const img of base64Images) {
+            const newQuestion: Question = {
+              id: crypto.randomUUID(),
+              imageBase64: img,
+              subject: subjectToSave as Subject | '',
+              chapter: chapterToSave as string,
+              timestamp: Date.now(),
+              isSolved: false,
+              tags: [],
+              notes: '',
+              isUncategorized: isUncategorized,
+              reviewStage: 0,
+              nextReviewDate: Date.now() + 24 * 60 * 60 * 1000 // 1 day default
+            };
+            await addQuestion(newQuestion);
+          }
+          toast.success(`Saved ${base64Images.length} image(s) to ${isUncategorized ? 'Inbox' : selectedChapter}`);
+          setRefreshTrigger(prev => prev + 1);
+        } else {
+          if (pastedImage) {
+            setPastedImages([...pastedImages, ...base64Images]);
+          } else {
+            setPastedImage(base64Images[0]);
+            if (base64Images.length > 1) {
+              setPastedImages(base64Images.slice(1));
+            }
+          }
+        }
+      });
     }
     e.target.value = '';
   };
@@ -74,8 +120,34 @@ export default function App() {
         const blob = items[i].getAsFile();
         if (blob) {
           const reader = new FileReader();
-          reader.onload = (event) => {
-            setPastedImage(event.target?.result as string);
+          reader.onload = async (event) => {
+            const img = event.target?.result as string;
+            const isMobile = window.innerWidth < 768;
+            if (isMobile) {
+              const isInboxOrDashboard = currentView !== 'vault' || !selectedChapter || !selectedSubject;
+              const subjectToSave = isInboxOrDashboard ? '' : selectedSubject;
+              const chapterToSave = isInboxOrDashboard ? '' : selectedChapter;
+              const isUncategorized = isInboxOrDashboard;
+
+              const newQuestion: Question = {
+                id: crypto.randomUUID(),
+                imageBase64: img,
+                subject: subjectToSave as Subject | '',
+                chapter: chapterToSave as string,
+                timestamp: Date.now(),
+                isSolved: false,
+                tags: [],
+                notes: '',
+                isUncategorized: isUncategorized,
+                reviewStage: 0,
+                nextReviewDate: Date.now() + 24 * 60 * 60 * 1000 // 1 day default
+              };
+              await addQuestion(newQuestion);
+              toast.success(`Saved image to ${isUncategorized ? 'Inbox' : selectedChapter}`);
+              setRefreshTrigger(prev => prev + 1);
+            } else {
+              setPastedImage(img);
+            }
           };
           reader.readAsDataURL(blob);
         }
@@ -111,7 +183,15 @@ export default function App() {
     try {
       await addQuestion(newQuestion);
       toast.success(isUncategorized ? 'Saved to Inbox!' : 'Image Saved!');
-      setPastedImage(null);
+      
+      if (pastedImages.length > 0) {
+        // Pop the first image and continue
+        setPastedImage(pastedImages[0]);
+        setPastedImages(pastedImages.slice(1));
+      } else {
+        setPastedImage(null);
+      }
+      
       setRefreshTrigger(prev => prev + 1);
       
       if (isUncategorized) {
@@ -139,6 +219,7 @@ export default function App() {
         type="file" 
         id="global-image-upload" 
         accept="image/*" 
+        multiple
         className="hidden" 
         onChange={handleImageUpload} 
       />
@@ -275,16 +356,24 @@ export default function App() {
         </button>
       </nav>
 
-      {pastedImage && (
-        <PasteModal 
-          imageUrl={pastedImage} 
-          onClose={() => setPastedImage(null)} 
-          onSave={handleSaveQuestion} 
-          initialSubject={selectedSubject}
-          initialChapter={selectedChapter}
-          availableTags={userTags}
-        />
-      )}
+            {pastedImage && (
+              <PasteModal 
+                imageUrl={pastedImage} 
+                queueCount={pastedImages.length}
+                onClose={() => {
+                  if (pastedImages.length > 0) {
+                    setPastedImage(pastedImages[0]);
+                    setPastedImages(pastedImages.slice(1));
+                  } else {
+                    setPastedImage(null);
+                  }
+                }} 
+                onSave={handleSaveQuestion} 
+                initialSubject={selectedSubject}
+                initialChapter={selectedChapter}
+                availableTags={userTags}
+              />
+            )}
     </div>
   );
 }

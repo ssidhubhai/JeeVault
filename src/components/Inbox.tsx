@@ -321,17 +321,17 @@ export function Inbox({ refreshTrigger, onRefresh, availableTags = QUICK_TAGS }:
           </div>
         </div>
       ) : (
-        <div className="flex-1 overflow-hidden flex flex-col md:flex-row p-6 gap-6">
-          <div className="flex-1 flex flex-col gap-4">
-            <div className="flex-1 bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200 dark:border-neutral-800 flex items-center justify-center overflow-hidden p-4 relative shadow-sm">
+        <div className="flex-1 overflow-y-auto flex flex-col md:flex-row p-4 md:p-6 gap-4 md:gap-6">
+          <div className="flex-1 flex flex-col gap-4 min-h-[50vh] md:min-h-0">
+            <div className="flex-1 bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200 dark:border-neutral-800 flex items-center justify-center overflow-auto p-4 relative shadow-sm">
               <img 
                 src={currentQ.imageBase64} 
                 alt="Uncategorized" 
-                className="max-w-full max-h-full object-contain"
+                className="max-w-full object-contain cursor-zoom-in active:scale-150 transition-transform origin-center"
               />
               <button
                 onClick={() => handleDelete()}
-                className="absolute top-4 right-4 p-3 bg-red-500/80 hover:bg-red-500 text-white rounded-full transition-colors shadow-lg backdrop-blur-sm"
+                className="absolute top-4 right-4 p-3 bg-red-500/80 hover:bg-red-500 text-white rounded-full transition-colors shadow-lg backdrop-blur-sm z-10"
                 title="Move to Recycle Bin"
               >
                 <Trash2 className="w-5 h-5" />
@@ -359,7 +359,7 @@ export function Inbox({ refreshTrigger, onRefresh, availableTags = QUICK_TAGS }:
             </div>
           </div>
 
-          <div className="w-full md:w-96 bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200 dark:border-neutral-800 p-6 flex flex-col space-y-4 overflow-y-auto shadow-sm">
+          <div className="w-full md:w-96 shrink-0 bg-white dark:bg-neutral-900 rounded-2xl border border-neutral-200 dark:border-neutral-800 p-6 flex flex-col space-y-4 shadow-sm md:overflow-y-auto">
             <div className="flex items-center justify-between border-b pb-2 dark:border-neutral-800">
               <h3 className="font-bold text-lg">Categorization</h3>
               <button onClick={() => setViewMode('grid')} className="text-xs text-blue-500 hover:underline">Back to Grid</button>
