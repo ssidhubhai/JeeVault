@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { TestSubmission, getTestSubmissions, addTestSubmission, deleteTestSubmission, SubjectStat, QuestionStat, updateTestSubmission, getAllDailyPlans } from '../lib/db';
-import { Activity, Plus, Trash2, ArrowLeft, Save, HelpCircle, AlertCircle, Info, ChevronRight, CheckCircle2, XCircle, MinusCircle, Edit3, Target, Zap, AlertTriangle } from 'lucide-react';
+import { Activity, Plus, Trash2, ArrowLeft, Save, HelpCircle, AlertCircle, Info, ChevronRight, CheckCircle2, XCircle, MinusCircle, Edit3, Target, Zap, AlertTriangle, Sparkles } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
+import ReactMarkdown from 'react-markdown';
+import { AIAnalysisUpload } from './AIAnalysisUpload';
 
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 
 // We'll create a wizard-like flow
 export function TestAnalysis() {
@@ -544,6 +546,58 @@ function CreateTestWizard({ onComplete, onCancel }: { onComplete: () => void, on
 
   // Questions Grids
   const [questions, setQuestions] = useState<QuestionStat[]>([]);
+  const [aiAnalysis, setAiAnalysis] = useState('');
+
+  const handleAIComplete = (data: any) => {
+    if (data.overallScore != null) setOverallScore(String(data.overallScore));
+    if (data.maxScore != null) setMaxScore(String(data.maxScore));
+    if (data.rank != null) setRank(String(data.rank));
+    if (data.percentile != null) setPercentile(String(data.percentile));
+    
+    let qList = data.questions && Array.isArray(data.questions) ? data.questions : [];
+    
+    // Auto calculate if missing
+    const getSubjStats = (rootPath: any, subjName: string) => {
+      let isMissing = rootPath == null || rootPath.score == null || rootPath.correct == null;
+      let c = rootPath?.correct;
+      let i = rootPath?.incorrect;
+      let s = rootPath?.skipped;
+      let sc = rootPath?.score;
+      let p = rootPath?.percentile;
+      
+      if (isMissing && qList.length > 0) {
+        const sq = qList.filter((q: any) => q.subject === subjName);
+        if (sq.length > 0) {
+          c = sq.filter((q: any) => q.status === 'Correct').length;
+          i = sq.filter((q: any) => q.status === 'Incorrect').length;
+          s = sq.filter((q: any) => q.status === 'Skipped' || q.status === 'Unmarked').length;
+          sc = (c * 4) - (i * 1);
+        }
+      }
+      return {
+        score: String(sc != null ? sc : ''),
+        correct: String(c != null ? c : ''),
+        incorrect: String(i != null ? i : ''),
+        skipped: String(s != null ? s : ''),
+        percentile: String(p != null ? p : '')
+      };
+    };
+
+    setPhysics(getSubjStats(data.physics, 'Physics'));
+    setChemistry(getSubjStats(data.chemistry, 'Chemistry'));
+    setMaths(getSubjStats(data.maths, 'Mathematics'));
+    
+    if (qList.length > 0) {
+      setQuestions(qList);
+    }
+    
+    if (data.aiAnalysis) {
+      setAiAnalysis(data.aiAnalysis);
+    }
+
+    setName(prev => prev.trim() ? prev : `AI Evaluated Test - ${new Date().toLocaleDateString()}`);
+    setStep(2);
+  };
 
   // Build grid based on Type when advancing to grid step
   useEffect(() => {
@@ -584,32 +638,33 @@ function CreateTestWizard({ onComplete, onCancel }: { onComplete: () => void, on
         category,
         score: parseNum(overallScore),
         maxScore: parseNum(maxScore) || (type === 'JEE Mains' ? 300 : 360),
-        percentile: percentile ? parseNum(percentile) : undefined,
-        rank: rank ? parseNum(rank) : undefined,
-        testUrl: testUrl.trim() ? testUrl.trim() : undefined,
+        ...(percentile ? { percentile: parseNum(percentile) } : {}),
+        ...(rank ? { rank: parseNum(rank) } : {}),
+        ...(testUrl.trim() ? { testUrl: testUrl.trim() } : {}),
         
         physics: {
           score: parseNum(physics.score),
-          percentile: physics.percentile ? parseNum(physics.percentile) : undefined,
+          ...(physics.percentile ? { percentile: parseNum(physics.percentile) } : {}),
           correct: parseNum(physics.correct),
           incorrect: parseNum(physics.incorrect),
           skipped: parseNum(physics.skipped),
         },
         chemistry: {
           score: parseNum(chemistry.score),
-          percentile: chemistry.percentile ? parseNum(chemistry.percentile) : undefined,
+          ...(chemistry.percentile ? { percentile: parseNum(chemistry.percentile) } : {}),
           correct: parseNum(chemistry.correct),
           incorrect: parseNum(chemistry.incorrect),
           skipped: parseNum(chemistry.skipped),
         },
         maths: {
           score: parseNum(maths.score),
-          percentile: maths.percentile ? parseNum(maths.percentile) : undefined,
+          ...(maths.percentile ? { percentile: parseNum(maths.percentile) } : {}),
           correct: parseNum(maths.correct),
           incorrect: parseNum(maths.incorrect),
           skipped: parseNum(maths.skipped),
         },
-        questions
+        questions,
+        ...(aiAnalysis ? { aiAnalysis } : {})
       };
 
       if (type === 'JEE Advanced' && subType) {
@@ -653,6 +708,8 @@ function CreateTestWizard({ onComplete, onCancel }: { onComplete: () => void, on
       <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-neutral-200 dark:border-neutral-800 p-6 sm:p-8">
         {step === 1 && (
           <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+            <AIAnalysisUpload onAnalyzeComplete={handleAIComplete} />
+            
             <div>
               <label className="block text-sm font-medium mb-1.5">Test Name</label>
               <input 
@@ -753,6 +810,22 @@ function CreateTestWizard({ onComplete, onCancel }: { onComplete: () => void, on
 
         {step === 2 && (
           <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-300">
+            {aiAnalysis ? (
+              <div className="p-5 bg-emerald-50 dark:bg-emerald-900/20 border-2 border-emerald-500 dark:border-emerald-400 rounded-xl mb-4 shadow-sm animate-in fade-in zoom-in-95 duration-500">
+                <h3 className="font-bold text-emerald-800 dark:text-emerald-400 mb-2 flex items-center gap-2 text-lg">
+                  <Sparkles className="w-6 h-6" />
+                  AI Extraction Successful!
+                </h3>
+                <div className="text-emerald-800 dark:text-emerald-300 font-medium mb-3">
+                  <p className="mb-2">1. We've auto-filled the scores based on your screenshots. Please review them below.</p>
+                  <p className="mb-2">2. To see your Brutally Honest AI Report and graphs, you MUST scroll down, click "Next Step", and then <span className="font-bold underline">Save the Test</span>!</p>
+                </div>
+                <div className="bg-white/80 dark:bg-black/40 rounded border border-emerald-200 dark:border-emerald-800 p-3 text-sm opacity-90 line-clamp-2 italic">
+                  <strong>Report Preview: </strong> {aiAnalysis.substring(0, 150)}...
+                </div>
+              </div>
+            ) : null}
+
             {/* OVERALL */}
             <div className="p-4 bg-indigo-50/50 dark:bg-indigo-900/10 border border-indigo-100 dark:border-indigo-900/30 rounded-xl">
               <h3 className="font-bold text-indigo-900 dark:text-indigo-300 mb-4 flex items-center gap-2">
@@ -1160,6 +1233,70 @@ function TestDetail({ test, onDelete, onUpdate }: { test: TestSubmission, onDele
         </div>
       </div>
 
+      {/* ANALYSIS CHART */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-neutral-200 dark:border-neutral-800 overflow-hidden p-6">
+          <h3 className="font-bold text-lg mb-6">Execution Breakdown (Questions)</h3>
+          <div className="h-[280px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart 
+                data={[
+                  { name: 'Physics', Correct: test.physics.correct, Incorrect: test.physics.incorrect, Skipped: test.physics.skipped },
+                  { name: 'Chemistry', Correct: test.chemistry.correct, Incorrect: test.chemistry.incorrect, Skipped: test.chemistry.skipped },
+                  { name: 'Mathematics', Correct: test.maths.correct, Incorrect: test.maths.incorrect, Skipped: test.maths.skipped },
+                ]}
+                margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e5e5" />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12 }} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12 }} />
+                <RechartsTooltip 
+                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}
+                  itemStyle={{ fontSize: '14px', fontWeight: 'bold' }}
+                  cursor={{fill: 'transparent'}}
+                />
+                <Legend iconType="circle" wrapperStyle={{ fontSize: '14px' }} />
+                <Bar dataKey="Correct" stackId="a" fill="#10b981" radius={[0, 0, 4, 4]} maxBarSize={60} />
+                <Bar dataKey="Incorrect" stackId="a" fill="#ef4444" maxBarSize={60} />
+                <Bar dataKey="Skipped" stackId="a" fill="#d4d4d8" radius={[4, 4, 0, 0]} maxBarSize={60} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-neutral-200 dark:border-neutral-800 overflow-hidden p-6">
+          <h3 className="font-bold text-lg mb-6">Overall Accuracy Profile</h3>
+          <div className="h-[280px] w-full flex items-center justify-center">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={[
+                    { name: 'Correct', value: test.physics.correct + test.chemistry.correct + test.maths.correct },
+                    { name: 'Incorrect', value: test.physics.incorrect + test.chemistry.incorrect + test.maths.incorrect },
+                    { name: 'Skipped', value: test.physics.skipped + test.chemistry.skipped + test.maths.skipped },
+                  ]}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={70}
+                  outerRadius={100}
+                  paddingAngle={2}
+                  dataKey="value"
+                >
+                  <Cell fill="#10b981" />
+                  <Cell fill="#ef4444" />
+                  <Cell fill="#d4d4d8" />
+                </Pie>
+                <RechartsTooltip 
+                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}
+                  itemStyle={{ fontSize: '14px', fontWeight: 'bold' }}
+                />
+                <Legend iconType="circle" wrapperStyle={{ fontSize: '14px' }} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
       {/* ANALYSIS TABLE */}
       <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-sm border border-neutral-200 dark:border-neutral-800 overflow-hidden mb-8">
         <div className="p-6 border-b border-neutral-200 dark:border-neutral-800">
@@ -1207,48 +1344,54 @@ function TestDetail({ test, onDelete, onUpdate }: { test: TestSubmission, onDele
         <h3 className="font-black text-xl text-indigo-900 dark:text-indigo-400 mb-6 flex items-center gap-2">
           <Info className="w-6 h-6" /> JEE Mentor Insights
         </h3>
-        <div className="space-y-4">
-          {[
-            { n: 'Physics', d: test.physics },
-            { n: 'Chemistry', d: test.chemistry },
-            { n: 'Maths', d: test.maths },
-          ].map(subj => {
-            const acc = getAcc(subj.d.correct, subj.d.incorrect);
-            const totalQs = subj.d.correct + subj.d.incorrect + subj.d.skipped;
-            const attempt = subj.d.correct + subj.d.incorrect;
-            const attemptRate = totalQs > 0 ? (attempt / totalQs) * 100 : 0;
-            
-            let insight = '';
-            let color = 'text-neutral-700 dark:text-neutral-300';
-            
-            if (attemptRate < 40 && acc > 85) {
-              insight = "Excellent accuracy, but attempt rate is too low. You need to improve your speed and widen your syllabus coverage.";
-              color = "text-amber-600 dark:text-amber-400";
-            } else if (attemptRate > 70 && acc < 60) {
-              insight = "High attempts but poor accuracy. You are losing too many marks to negative marking. Be more selective and avoid guessing.";
-              color = "text-red-600 dark:text-red-400";
-            } else if (attemptRate < 50 && acc < 60) {
-              insight = "Low attempts and low accuracy. Back to basics. Focus on strengthening core concepts before taking full tests.";
-              color = "text-rose-600 dark:text-rose-400";
-            } else if (attemptRate >= 60 && acc >= 80) {
-              insight = "Strong performance. Good balance of speed and accuracy. Focus on eliminating the few remaining silly mistakes and maintaining consistency.";
-              color = "text-emerald-600 dark:text-emerald-400";
-            } else {
-              insight = "Average performance. Focus on analyzing your incorrect questions to see if they were conceptual gaps or silly calculation errors.";
-              color = "text-blue-600 dark:text-blue-400";
-            }
-            return (
-              <div key={subj.n} className="bg-white dark:bg-neutral-900 p-4 rounded-xl shadow-sm border border-indigo-100 dark:border-indigo-900/20">
-                <div className="font-bold text-neutral-900 dark:text-white mb-1">{subj.n} Analysis</div>
-                <div className={cn("text-sm font-medium", color)}>{insight}</div>
-                <div className="mt-2 text-xs text-neutral-500 flex gap-4">
-                  <span>Attempt Rate: {Math.round(attemptRate)}%</span>
-                  <span>Accuracy: {acc}%</span>
+        {test.aiAnalysis ? (
+           <div className="prose prose-indigo dark:prose-invert max-w-none prose-sm leading-relaxed text-indigo-950 dark:text-indigo-100">
+             <ReactMarkdown>{test.aiAnalysis}</ReactMarkdown>
+           </div>
+        ) : (
+          <div className="space-y-4">
+            {[
+              { n: 'Physics', d: test.physics },
+              { n: 'Chemistry', d: test.chemistry },
+              { n: 'Maths', d: test.maths },
+            ].map(subj => {
+              const acc = getAcc(subj.d.correct, subj.d.incorrect);
+              const totalQs = subj.d.correct + subj.d.incorrect + subj.d.skipped;
+              const attempt = subj.d.correct + subj.d.incorrect;
+              const attemptRate = totalQs > 0 ? (attempt / totalQs) * 100 : 0;
+              
+              let insight = '';
+              let color = 'text-neutral-700 dark:text-neutral-300';
+              
+              if (attemptRate < 40 && acc > 85) {
+                insight = "Excellent accuracy, but attempt rate is too low. You need to improve your speed and widen your syllabus coverage.";
+                color = "text-amber-600 dark:text-amber-400";
+              } else if (attemptRate > 70 && acc < 60) {
+                insight = "High attempts but poor accuracy. You are losing too many marks to negative marking. Be more selective and avoid guessing.";
+                color = "text-red-600 dark:text-red-400";
+              } else if (attemptRate < 50 && acc < 60) {
+                insight = "Low attempts and low accuracy. Back to basics. Focus on strengthening core concepts before taking full tests.";
+                color = "text-rose-600 dark:text-rose-400";
+              } else if (attemptRate >= 60 && acc >= 80) {
+                insight = "Strong performance. Good balance of speed and accuracy. Focus on eliminating the few remaining silly mistakes and maintaining consistency.";
+                color = "text-emerald-600 dark:text-emerald-400";
+              } else {
+                insight = "Average performance. Focus on analyzing your incorrect questions to see if they were conceptual gaps or silly calculation errors.";
+                color = "text-blue-600 dark:text-blue-400";
+              }
+              return (
+                <div key={subj.n} className="bg-white dark:bg-neutral-900 p-4 rounded-xl shadow-sm border border-indigo-100 dark:border-indigo-900/20">
+                  <div className="font-bold text-neutral-900 dark:text-white mb-1">{subj.n} Analysis</div>
+                  <div className={cn("text-sm font-medium", color)}>{insight}</div>
+                  <div className="mt-2 text-xs text-neutral-500 flex gap-4">
+                    <span>Attempt Rate: {Math.round(attemptRate)}%</span>
+                    <span>Accuracy: {acc}%</span>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* QUESTION GRID DISPLAY */}

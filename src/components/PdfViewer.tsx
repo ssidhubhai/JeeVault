@@ -144,6 +144,7 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
         }
 
         const session: PdfSession = {
+          ...(existingSession || {}),
           id: currentSessionId,
           fileData,
           fileName: file.name,

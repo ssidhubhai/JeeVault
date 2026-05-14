@@ -112,6 +112,10 @@ export default function App() {
       return;
     }
     
+    if (document.getElementById('ai-analysis-upload-container')) {
+      return;
+    }
+
     const items = e.clipboardData?.items;
     if (!items) return;
 

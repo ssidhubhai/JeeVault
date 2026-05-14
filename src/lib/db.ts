@@ -131,6 +131,7 @@ export interface TestSubmission {
   maths: SubjectStat;
   
   questions: QuestionStat[];
+  aiAnalysis?: string;
 }
 
 // --- Settings ---
