@@ -7,6 +7,8 @@ import { cn } from '../lib/utils';
 import { savePdfSession, getPdfSession, getAllPdfSessions, clearPdfSession, PdfSession, addQuestion } from '../lib/db';
 import { toast } from 'react-hot-toast';
 import { toCanvas } from 'html-to-image';
+import { PasteModal } from './PasteModal';
+import { Subject } from '../App';
 
 // Initialize PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -190,7 +192,55 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!file) return;
+      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
+        return;
+      }
       
+      // Pagination Keys
+      if (e.key === 'ArrowRight' || e.key === 'PageDown') {
+          e.preventDefault();
+          setPageNumber((p) => {
+             const next = Math.min(p + 1, numPages);
+             setPageInput(next.toString());
+             window.requestAnimationFrame(() => {
+                const pageNode = pageRefs.current[next - 1];
+                if (pageNode) pageNode.scrollIntoView({ behavior: 'smooth', block: 'start' });
+             });
+             return next;
+          });
+      } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+          e.preventDefault();
+          setPageNumber((p) => {
+             const prev = Math.max(p - 1, 1);
+             setPageInput(prev.toString());
+             window.requestAnimationFrame(() => {
+                const pageNode = pageRefs.current[prev - 1];
+                if (pageNode) pageNode.scrollIntoView({ behavior: 'smooth', block: 'start' });
+             });
+             return prev;
+          });
+      } else if (e.key === 'End') {
+          e.preventDefault();
+          setPageNumber(() => {
+             setPageInput(numPages.toString());
+             window.requestAnimationFrame(() => {
+                const pageNode = pageRefs.current[numPages - 1];
+                if (pageNode) pageNode.scrollIntoView({ behavior: 'smooth', block: 'start' });
+             });
+             return numPages;
+          });
+      } else if (e.key === 'Home') {
+          e.preventDefault();
+          setPageNumber(() => {
+             setPageInput('1');
+             window.requestAnimationFrame(() => {
+                const pageNode = pageRefs.current[0];
+                if (pageNode) pageNode.scrollIntoView({ behavior: 'smooth', block: 'start' });
+             });
+             return 1;
+          });
+      }
+
       // Zoom
       if (e.ctrlKey && e.key === '=') {
         e.preventDefault();
@@ -224,7 +274,7 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [file, timerMinutes]);
+  }, [file, timerMinutes, numPages]);
 
   // Ctrl + Scroll to Zoom
   useEffect(() => {
@@ -490,8 +540,8 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
       isZenMode ? "fixed inset-0 z-50" : "flex-1 h-full"
     )}>
       {/* Top Toolbar */}
-      <div className="h-14 bg-neutral-950 border-b border-neutral-800 flex items-center justify-between px-4 shrink-0 z-10 shadow-md">
-        <div className="flex items-center gap-4">
+      <div className="h-14 bg-neutral-950 border-b border-neutral-800 flex items-center justify-between px-2 sm:px-4 shrink-0 z-10 shadow-md">
+        <div className="flex items-center gap-2 sm:gap-4 flex-1">
           <button 
             onClick={() => {
               setFile(null);
@@ -502,15 +552,43 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
                 setRecentSessions(sessions);
               });
             }}
-            className="text-sm font-medium text-neutral-400 hover:text-white transition-colors"
+            className="p-1.5 text-neutral-400 hover:text-white bg-neutral-900 hover:bg-neutral-800 rounded-lg transition-colors flex items-center gap-1"
+            title="Close PDF"
           >
-            Close PDF
+            <X className="w-5 h-5" />
           </button>
           
-          <div className="h-4 w-px bg-neutral-800" />
-          
-          {/* Pagination Controls */}
-          <div className="flex items-center gap-2 bg-neutral-900 p-1 rounded-lg border border-neutral-800">
+          {/* Snip Action */}
+          <button
+            onClick={() => {
+              setIsSnipping(true);
+              setSnipStart(null);
+              setSnipCurrent(null);
+            }}
+            className="p-1.5 text-blue-400 hover:text-blue-300 bg-blue-900/20 hover:bg-blue-900/30 rounded-lg transition-colors flex items-center gap-1.5 border border-blue-900/50"
+            title="Snip screen"
+          >
+            <Scissors className="w-4 h-4" />
+            <span className="text-xs font-bold px-1 hidden sm:inline">Snip</span>
+          </button>
+
+          <div className="h-4 w-px bg-neutral-800 hidden sm:block" />
+
+          {/* Theme Controls */}
+          <div className="hidden md:flex items-center gap-1 bg-neutral-900 p-1 rounded-lg border border-neutral-800">
+            <button 
+              onClick={() => setTheme(prev => prev === 'normal' ? 'dark' : prev === 'dark' ? 'sepia' : prev === 'sepia' ? 'warm' : 'normal')}
+              className="p-1.5 rounded-md transition-colors text-neutral-400 hover:text-white"
+              title="Toggle Theme"
+            >
+              {theme === 'normal' ? <Sun className="w-4 h-4" /> : theme === 'dark' ? <Moon className="w-4 h-4" /> : theme === 'sepia' ? <Coffee className="w-4 h-4" /> : <Sun className="w-4 h-4 text-orange-400" />}
+            </button>
+          </div>
+        </div>
+
+        {/* Center: Pagination Controls */}
+        <div className="flex items-center justify-center flex-1">
+          <div className="flex items-center gap-1 bg-neutral-900 p-1 rounded-lg border border-neutral-800">
             <button 
               onClick={() => scrollToPage(Math.max(pageNumber - 1, 1))}
               disabled={pageNumber <= 1}
@@ -524,7 +602,7 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
                 value={pageInput}
                 onChange={(e) => setPageInput(e.target.value)}
                 onBlur={handlePageSubmit}
-                className="w-10 bg-neutral-950 border border-neutral-700 rounded px-1 py-0.5 text-xs text-center text-white focus:outline-none focus:border-blue-500"
+                className="w-8 sm:w-10 bg-neutral-950 border border-neutral-700 rounded px-1 py-0.5 text-xs text-center text-white focus:outline-none focus:border-blue-500"
               />
               <span className="text-xs font-medium text-neutral-400 ml-1 min-w-[2rem]">
                 / {numPages || '-'}
@@ -538,15 +616,16 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
+        </div>
 
-          <div className="h-4 w-px bg-neutral-800" />
-
+        {/* Right Side: Zoom, Timer & Zen Mode */}
+        <div className="flex items-center gap-2 sm:gap-3 flex-1 justify-end relative">
           {/* Zoom Controls */}
-          <div className="flex items-center gap-1 bg-neutral-900 p-1 rounded-lg border border-neutral-800">
+          <div className="hidden lg:flex items-center gap-1 bg-neutral-900 p-1 rounded-lg border border-neutral-800">
             <button onClick={() => setScale(prev => Math.max(prev - 0.2, 0.5))} className="p-1 text-neutral-400 hover:text-white">
               <ZoomOut className="w-4 h-4" />
             </button>
-            <span className="text-xs font-medium text-neutral-400 w-10 text-center">{Math.round(scale * 100)}%</span>
+            <span className="text-xs font-medium text-neutral-400 w-9 text-center">{Math.round(scale * 100)}%</span>
             <button onClick={() => setScale(prev => Math.min(prev + 0.2, 3))} className="p-1 text-neutral-400 hover:text-white">
               <ZoomIn className="w-4 h-4" />
             </button>
@@ -563,67 +642,14 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
             </button>
           </div>
 
-          <div className="h-4 w-px bg-neutral-800" />
-
-          {/* Snip Action */}
-          <button
-            onClick={() => {
-              setIsSnipping(true);
-              setSnipStart(null);
-              setSnipCurrent(null);
-            }}
-            className="p-1.5 text-blue-400 hover:text-blue-300 bg-blue-900/20 hover:bg-blue-900/30 rounded-lg transition-colors flex items-center gap-1"
-            title="Snip screen & save to Inbox"
-          >
-            <Scissors className="w-4 h-4" />
-            <span className="text-xs font-bold px-1">Snip</span>
-          </button>
-
-          <div className="h-4 w-px bg-neutral-800" />
-
-          {/* Theme Controls */}
-          <div className="flex items-center gap-1 bg-neutral-900 p-1 rounded-lg border border-neutral-800">
-            <button 
-              onClick={() => setTheme('normal')}
-              className={cn("p-1.5 rounded-md transition-colors", theme === 'normal' ? "bg-neutral-800 text-white" : "text-neutral-400 hover:text-white")}
-              title="Normal (White)"
-            >
-              <Sun className="w-4 h-4" />
-            </button>
-            <button 
-              onClick={() => setTheme('dark')}
-              className={cn("p-1.5 rounded-md transition-colors", theme === 'dark' ? "bg-neutral-800 text-white" : "text-neutral-400 hover:text-white")}
-              title="Dark Mode (Alt+D)"
-            >
-              <Moon className="w-4 h-4" />
-            </button>
-            <button 
-              onClick={() => setTheme('sepia')}
-              className={cn("p-1.5 rounded-md transition-colors", theme === 'sepia' ? "bg-neutral-800 text-amber-400" : "text-neutral-400 hover:text-amber-400")}
-              title="Sepia"
-            >
-              <Coffee className="w-4 h-4" />
-            </button>
-            <button 
-              onClick={() => setTheme('warm')}
-              className={cn("p-1.5 rounded-md transition-colors", theme === 'warm' ? "bg-neutral-800 text-orange-400" : "text-neutral-400 hover:text-orange-400")}
-              title="Warm"
-            >
-              <Sun className="w-4 h-4 text-orange-400" />
-            </button>
-          </div>
-        </div>
-
-        {/* Right Side: Timer & Zen Mode */}
-        <div className="flex items-center gap-3 relative">
-          <div className="flex items-center gap-2 bg-neutral-900 p-1 rounded-lg border border-neutral-800">
+          <div className="flex items-center gap-1 sm:gap-2 bg-neutral-900 p-1 rounded-lg border border-neutral-800">
             <div className={cn(
-              "px-3 py-1 font-mono text-lg font-bold tracking-wider",
+              "px-2 sm:px-3 py-1 font-mono text-sm sm:text-lg font-bold tracking-wider",
               timeLeft < 300 ? "text-red-500" : "text-white"
             )}>
               {formatTime(timeLeft)}
             </div>
-            <div className="w-px h-4 bg-neutral-800 mx-1" />
+            <div className="w-px h-4 bg-neutral-800 mx-0.5 sm:mx-1" />
             <button 
               onClick={() => setIsTimerRunning(!isTimerRunning)}
               className="p-1.5 text-neutral-400 hover:text-white transition-colors"
@@ -632,19 +658,9 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
               {isTimerRunning ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
             </button>
             <button 
-              onClick={() => {
-                setTimeLeft(timerMinutes * 60);
-                setIsTimerRunning(false);
-              }}
-              className="p-1.5 text-neutral-400 hover:text-white transition-colors"
-              title="Reset (Alt+R)"
-            >
-              <RotateCcw className="w-4 h-4" />
-            </button>
-            <button 
               onClick={() => setIsSettingsOpen(!isSettingsOpen)}
               className={cn(
-                "p-1.5 transition-colors",
+                "p-1.5 transition-colors hidden sm:block",
                 isSettingsOpen ? "text-white bg-neutral-800 rounded" : "text-neutral-400 hover:text-white"
               )}
               title="Settings"
@@ -865,57 +881,33 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
 
       {/* Captured Snip Modal */}
       {capturedSnip && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-neutral-900 rounded-2xl shadow-2xl max-w-2xl w-full flex flex-col overflow-hidden">
-            <div className="p-4 border-b border-neutral-200 dark:border-neutral-800 flex justify-between items-center bg-white dark:bg-neutral-900">
-              <h3 className="font-bold text-lg text-neutral-900 dark:text-white">Save Snip to Inbox?</h3>
-              <button onClick={() => setCapturedSnip(null)} className="p-1 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded">
-                <X className="w-5 h-5 text-neutral-500" />
-              </button>
-            </div>
-            <div className="p-6 bg-neutral-100 dark:bg-neutral-950 flex items-center justify-center overflow-auto max-h-[60vh]">
-              <img src={capturedSnip} alt="Snip" className="max-w-full outline outline-1 outline-neutral-200 dark:outline-neutral-800 shadow-md rounded" />
-            </div>
-            <div className="p-4 bg-white dark:bg-neutral-900 border-t border-neutral-200 dark:border-neutral-800 flex justify-end gap-3">
-              <button 
-                onClick={() => setCapturedSnip(null)}
-                className="px-4 py-2 font-medium text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800 rounded-lg transition-colors"
-                disabled={isSavingSnip}
-              >
-                Discard
-              </button>
-              <button 
-                onClick={async () => {
-                   setIsSavingSnip(true);
-                   try {
-                      await addQuestion({
-                        id: crypto.randomUUID(),
-                        imageBase64: capturedSnip,
-                        subject: '',
-                        chapter: '',
-                        timestamp: Date.now(),
-                        tags: [],
-                        notes: '',
-                        isUncategorized: true,
-                        reviewStage: 0,
-                        nextReviewDate: Date.now() + 24 * 60 * 60 * 1000,
-                      });
-                      toast.success("Saved to Inbox!");
-                      setCapturedSnip(null);
-                   } catch(e) {
-                      toast.error("Failed to save");
-                   } finally {
-                      setIsSavingSnip(false);
-                   }
-                }}
-                disabled={isSavingSnip}
-                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition-colors flex justify-center items-center gap-2"
-              >
-                {isSavingSnip ? "Saving..." : "Save to Inbox"}
-              </button>
-            </div>
-          </div>
-        </div>
+        <PasteModal
+          imageUrl={capturedSnip}
+          onClose={() => setCapturedSnip(null)}
+          onSave={async (subject, chapter, tags, notes, isUncategorized, croppedImageUrl) => {
+             setIsSavingSnip(true);
+             try {
+                await addQuestion({
+                  id: crypto.randomUUID(),
+                  imageBase64: croppedImageUrl || capturedSnip,
+                  subject: subject as Subject || '',
+                  chapter: chapter,
+                  timestamp: Date.now(),
+                  tags: tags,
+                  notes: notes,
+                  isUncategorized: isUncategorized || false,
+                  reviewStage: 0,
+                  nextReviewDate: Date.now() + 24 * 60 * 60 * 1000,
+                });
+                toast.success(isUncategorized ? "Saved to Inbox!" : "Saved successfully!");
+                setCapturedSnip(null);
+             } catch(e) {
+                toast.error("Failed to save");
+             } finally {
+                setIsSavingSnip(false);
+             }
+          }}
+        />
       )}
     </div>
   );

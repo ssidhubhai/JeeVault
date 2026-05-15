@@ -207,31 +207,26 @@ export const savePdfSession = async (session: PdfSession) => {
     });
   }
 
-  const sessionData = {
+  const sessionData: any = {
     id: session.id,
     userId: uid,
     fileName: session.fileName,
     fileType: session.fileType,
     pageNumber: session.pageNumber,
-    scale: session.scale ?? null,
-    theme: session.theme ?? null,
-    timerMinutes: session.timerMinutes ?? null,
-    timeLeft: session.timeLeft ?? null,
     lastOpened: session.lastOpened || Date.now(),
-    subject: session.subject || null,
-    chapter: session.chapter || null,
-    boxName: session.boxName || null,
     orderIndex: session.orderIndex || 0,
-    deletedAt: session.deletedAt || null
   };
   
-  Object.keys(sessionData).forEach(key => {
-    if ((sessionData as any)[key] === undefined) {
-      delete (sessionData as any)[key];
-    }
-  });
+  if (session.scale !== undefined) sessionData.scale = session.scale;
+  if (session.theme !== undefined) sessionData.theme = session.theme;
+  if (session.timerMinutes !== undefined) sessionData.timerMinutes = session.timerMinutes;
+  if (session.timeLeft !== undefined) sessionData.timeLeft = session.timeLeft;
+  if (session.subject !== undefined) sessionData.subject = session.subject;
+  if (session.chapter !== undefined) sessionData.chapter = session.chapter;
+  if (session.boxName !== undefined) sessionData.boxName = session.boxName;
+  if (session.deletedAt !== undefined) sessionData.deletedAt = session.deletedAt;
 
-  await setDoc(doc(db, `users/${uid}/pdf_sessions`, session.id), sessionData);
+  await setDoc(doc(db, `users/${uid}/pdf_sessions`, session.id), sessionData, { merge: true });
 };
 
 export const getPdfSession = async (id: string): Promise<PdfSession | undefined> => {

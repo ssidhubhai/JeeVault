@@ -17,24 +17,56 @@ interface PasteModalProps {
 }
 
 export function PasteModal({ imageUrl, queueCount = 0, onClose, onSave, initialSubject, initialChapter, availableTags = QUICK_TAGS }: PasteModalProps) {
-  const [subject, setSubject] = useState<Subject>(initialSubject || 'Physics');
-  const [classType, setClassType] = useState<'Class 11' | 'Class 12'>(() => {
+  const initialState = (() => {
+    let s: Subject = initialSubject || 'Physics';
+    let ct: 'Class 11' | 'Class 12' = 'Class 11';
+    let c = JEE_SYLLABUS[s][ct][0];
+    let t: string[] = [];
+
+    // Apply initial overrides if present and matched
     if (initialSubject && initialChapter) {
-      if (JEE_SYLLABUS[initialSubject]['Class 12'].includes(initialChapter)) {
-        return 'Class 12';
+      if (JEE_SYLLABUS[initialSubject]['Class 11'].includes(initialChapter)) {
+        ct = 'Class 11';
+        c = initialChapter;
+      } else if (JEE_SYLLABUS[initialSubject]['Class 12'].includes(initialChapter)) {
+        ct = 'Class 12';
+        c = initialChapter;
       }
     }
-    return 'Class 11';
-  });
-  const [chapter, setChapter] = useState(() => {
-    if (initialSubject && initialChapter && 
-        (JEE_SYLLABUS[initialSubject]['Class 11'].includes(initialChapter) || 
-         JEE_SYLLABUS[initialSubject]['Class 12'].includes(initialChapter))) {
-      return initialChapter;
-    }
-    return JEE_SYLLABUS[initialSubject || 'Physics']['Class 11'][0];
-  });
-  const [tags, setTags] = useState<string[]>([]);
+
+    try {
+      const saved = localStorage.getItem('lastPastePath');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        const useSavedTheme = !initialSubject || initialSubject === parsed.subject;
+        
+        if (useSavedTheme && parsed.subject && Object.keys(JEE_SYLLABUS).includes(parsed.subject)) {
+          s = parsed.subject as Subject;
+          
+          if (parsed.classType === 'Class 11' || parsed.classType === 'Class 12') {
+            ct = parsed.classType;
+          }
+          
+          if (parsed.chapter && JEE_SYLLABUS[s][ct]?.includes(parsed.chapter)) {
+            c = parsed.chapter;
+          } else {
+            c = JEE_SYLLABUS[s][ct][0];
+          }
+
+          if (Array.isArray(parsed.tags)) {
+            t = parsed.tags;
+          }
+        }
+      }
+    } catch (e) {}
+
+    return { s, ct, c, t };
+  })();
+
+  const [subject, setSubject] = useState<Subject>(initialState.s);
+  const [classType, setClassType] = useState<'Class 11' | 'Class 12'>(initialState.ct);
+  const [chapter, setChapter] = useState(initialState.c);
+  const [tags, setTags] = useState<string[]>(initialState.t);
   const [notes, setNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const isSavingRef = useRef(false);
@@ -44,26 +76,30 @@ export function PasteModal({ imageUrl, queueCount = 0, onClose, onSave, initialS
   const imgRef = useRef<HTMLImageElement>(null);
   const [isCropping, setIsCropping] = useState(false);
 
-  const isFirstRender = useRef(true);
-
-  useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false;
-      return;
+  const handleSubjectChange = (newSubject: Subject) => {
+    setSubject(newSubject);
+    if (!JEE_SYLLABUS[newSubject][classType].includes(chapter)) {
+      setChapter(JEE_SYLLABUS[newSubject][classType][0]);
     }
-    setChapter(JEE_SYLLABUS[subject][classType][0]);
-  }, [subject, classType]);
+  };
+
+  const handleClassTypeChange = (newType: 'Class 11' | 'Class 12') => {
+    setClassType(newType);
+    if (!JEE_SYLLABUS[subject][newType].includes(chapter)) {
+      setChapter(JEE_SYLLABUS[subject][newType][0]);
+    }
+  };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         onClose();
       } else if (e.key === '1' && e.altKey) {
-        setSubject('Physics');
+        handleSubjectChange('Physics');
       } else if (e.key === '2' && e.altKey) {
-        setSubject('Chemistry');
+        handleSubjectChange('Chemistry');
       } else if (e.key === '3' && e.altKey) {
-        setSubject('Mathematics');
+        handleSubjectChange('Mathematics');
       } else if (e.key === 'd' && e.altKey) {
         handleQuickDump();
       } else if (e.key === 'Enter' && e.ctrlKey) {
@@ -159,6 +195,8 @@ export function PasteModal({ imageUrl, queueCount = 0, onClose, onSave, initialS
           console.error("Failed to compress image", e);
         }
       }
+      
+      localStorage.setItem('lastPastePath', JSON.stringify({ subject, classType, chapter: chapter.trim(), tags }));
       
       await onSave(subject, chapter.trim(), tags, notes.trim(), false, finalImageUrl);
     } catch (error) {
@@ -270,7 +308,7 @@ export function PasteModal({ imageUrl, queueCount = 0, onClose, onSave, initialS
               </label>
               <select
                 value={subject}
-                onChange={(e) => setSubject(e.target.value as Subject)}
+                onChange={(e) => handleSubjectChange(e.target.value as Subject)}
                 className="w-full px-3 py-2 bg-white dark:bg-neutral-950 border border-neutral-300 dark:border-neutral-700 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="Physics">Physics</option>
@@ -286,7 +324,7 @@ export function PasteModal({ imageUrl, queueCount = 0, onClose, onSave, initialS
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
-                onClick={() => setClassType('Class 11')}
+                onClick={() => handleClassTypeChange('Class 11')}
                 className={cn(
                   "py-1.5 text-[10px] font-bold rounded-lg border transition-all",
                   classType === 'Class 11'
@@ -298,7 +336,7 @@ export function PasteModal({ imageUrl, queueCount = 0, onClose, onSave, initialS
               </button>
               <button
                 type="button"
-                onClick={() => setClassType('Class 12')}
+                onClick={() => handleClassTypeChange('Class 12')}
                 className={cn(
                   "py-1.5 text-[10px] font-bold rounded-lg border transition-all",
                   classType === 'Class 12'
