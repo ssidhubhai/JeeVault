@@ -41,7 +41,7 @@ export interface Question {
 
 // --- Local DB Setup ---
 const DB_NAME = 'StudyAppLocal';
-const DB_VERSION = 7; // Bumped version for new stores
+const DB_VERSION = 8; // Bumped version for pdfAnnotations
 
 let localDb: IDBPDatabase | null = null;
 
@@ -72,6 +72,9 @@ const getLocalDB = async () => {
       }
       if (!db.objectStoreNames.contains('mistakes')) {
         db.createObjectStore('mistakes', { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains('pdfAnnotations')) {
+        db.createObjectStore('pdfAnnotations', { keyPath: 'pdfId' });
       }
     },
   });
@@ -683,3 +686,15 @@ export const deleteMistake = async (id: string): Promise<void> => {
   const ldb = await getLocalDB();
   await ldb.delete('mistakes', id);
 };
+
+export const savePdfAnnotations = async (pdfId: string, annotations: any): Promise<void> => {
+  const ldb = await getLocalDB();
+  await ldb.put('pdfAnnotations', { pdfId, annotations });
+};
+
+export const getPdfAnnotations = async (pdfId: string): Promise<any | null> => {
+  const ldb = await getLocalDB();
+  const record = await ldb.get('pdfAnnotations', pdfId);
+  return record ? record.annotations : null;
+};
+
