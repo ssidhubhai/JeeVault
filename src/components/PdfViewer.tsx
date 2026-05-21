@@ -115,6 +115,15 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
   const [recentSessions, setRecentSessions] = useState<PdfSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
 
+  // Lazy loading state for holding original page dimensions
+  const [pageSizes, setPageSizes] = useState<{
+    [pageNum: number]: { width: number; height: number };
+  }>({});
+
+  useEffect(() => {
+    setPageSizes({});
+  }, [file]);
+
   // Timer State
   const [timerMinutes, setTimerMinutes] = useState(60);
   const [timeLeft, setTimeLeft] = useState(60 * 60);
@@ -586,51 +595,69 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
     return distSq(p, { x: v.x + t * (w.x - v.x), y: v.y + t * (w.y - v.y) });
   };
 
-  const isPointNearStroke = (x: number, y: number, stroke: Stroke, threshold: number) => {
+  const isPointNearStroke = (
+    x: number,
+    y: number,
+    stroke: Stroke,
+    threshold: number,
+  ) => {
     const p = { x, y };
     const threshSq = threshold * threshold;
-    
+
     if (stroke.points.length < 2) {
-       return stroke.points.some(pt => distSq(pt, p) <= threshSq);
+      return stroke.points.some((pt) => distSq(pt, p) <= threshSq);
     }
 
-    if (stroke.type === 'pen' || stroke.type === 'highlight' || stroke.type === 'eraser') {
+    if (
+      stroke.type === "pen" ||
+      stroke.type === "highlight" ||
+      stroke.type === "eraser"
+    ) {
       for (let i = 0; i < stroke.points.length - 1; i++) {
-          if (distToSegmentSq(p, stroke.points[i], stroke.points[i+1]) <= threshSq) return true;
+        if (
+          distToSegmentSq(p, stroke.points[i], stroke.points[i + 1]) <= threshSq
+        )
+          return true;
       }
       return false;
     }
-    
+
     const p1 = stroke.points[0];
     const p2 = stroke.points[stroke.points.length - 1];
-    
-    if (stroke.type === 'rectangle') {
-        const c1 = {x: Math.min(p1.x, p2.x), y: Math.min(p1.y, p2.y)};
-        const c2 = {x: Math.max(p1.x, p2.x), y: Math.min(p1.y, p2.y)};
-        const c3 = {x: Math.max(p1.x, p2.x), y: Math.max(p1.y, p2.y)};
-        const c4 = {x: Math.min(p1.x, p2.x), y: Math.max(p1.y, p2.y)};
-        return distToSegmentSq(p, c1, c2) <= threshSq ||
-               distToSegmentSq(p, c2, c3) <= threshSq ||
-               distToSegmentSq(p, c3, c4) <= threshSq ||
-               distToSegmentSq(p, c4, c1) <= threshSq;
+
+    if (stroke.type === "rectangle") {
+      const c1 = { x: Math.min(p1.x, p2.x), y: Math.min(p1.y, p2.y) };
+      const c2 = { x: Math.max(p1.x, p2.x), y: Math.min(p1.y, p2.y) };
+      const c3 = { x: Math.max(p1.x, p2.x), y: Math.max(p1.y, p2.y) };
+      const c4 = { x: Math.min(p1.x, p2.x), y: Math.max(p1.y, p2.y) };
+      return (
+        distToSegmentSq(p, c1, c2) <= threshSq ||
+        distToSegmentSq(p, c2, c3) <= threshSq ||
+        distToSegmentSq(p, c3, c4) <= threshSq ||
+        distToSegmentSq(p, c4, c1) <= threshSq
+      );
     }
-    
-    if (stroke.type === 'circle') {
-        const cx = (p1.x + p2.x) / 2;
-        const cy = (p1.y + p2.y) / 2;
-        const rx = Math.abs(p2.x - p1.x) / 2;
-        const ry = Math.abs(p2.y - p1.y) / 2;
-        if (rx === 0 || ry === 0) return distToSegmentSq(p, p1, p2) <= threshSq;
-        const dx = (x - cx) / rx;
-        const dy = (y - cy) / ry;
-        const dist = Math.sqrt(dx*dx + dy*dy);
-        return Math.abs(1 - dist) * Math.min(rx, ry) <= threshold;
+
+    if (stroke.type === "circle") {
+      const cx = (p1.x + p2.x) / 2;
+      const cy = (p1.y + p2.y) / 2;
+      const rx = Math.abs(p2.x - p1.x) / 2;
+      const ry = Math.abs(p2.y - p1.y) / 2;
+      if (rx === 0 || ry === 0) return distToSegmentSq(p, p1, p2) <= threshSq;
+      const dx = (x - cx) / rx;
+      const dy = (y - cy) / ry;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      return Math.abs(1 - dist) * Math.min(rx, ry) <= threshold;
     }
-    
-    if (stroke.type === 'line' || stroke.type === 'dotted-line' || stroke.type === 'arrow') {
-        return distToSegmentSq(p, p1, p2) <= threshSq;
+
+    if (
+      stroke.type === "line" ||
+      stroke.type === "dotted-line" ||
+      stroke.type === "arrow"
+    ) {
+      return distToSegmentSq(p, p1, p2) <= threshSq;
     }
-    
+
     return false;
   };
 
@@ -802,51 +829,105 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
     >
       {Array.from(new Array(numPages), (el, index) => {
         const pageNum = index + 1;
+        const isNearViewport = Math.abs(pageNum - pageNumber) <= 4;
+
+        // Compute dynamic height and width using registered loaded pages, or fallback
+        const pageHeight = (() => {
+          if (pageSizes[pageNum]) return pageSizes[pageNum].height * scale;
+          const loadedKeys = Object.keys(pageSizes);
+          if (loadedKeys.length > 0) {
+            return pageSizes[Number(loadedKeys[0])].height * scale;
+          }
+          return 842 * scale; // Standard A4 height
+        })();
+
+        const pageWidth = (() => {
+          if (pageSizes[pageNum]) return pageSizes[pageNum].width * scale;
+          const loadedKeys = Object.keys(pageSizes);
+          if (loadedKeys.length > 0) {
+            return pageSizes[Number(loadedKeys[0])].width * scale;
+          }
+          return 595 * scale; // Standard A4 width
+        })();
+
         return (
           <div
             key={`page_${pageNum}`}
             ref={(el) => (pageRefs.current[index] = el)}
             data-page-number={pageNum}
-            className="mb-8 shadow-2xl bg-white relative"
+            className="mb-8 shadow-2xl bg-white relative flex items-center justify-center overflow-hidden"
+            style={{ height: pageHeight, width: pageWidth }}
           >
-            <Page
-              pageNumber={pageNum}
-              scale={scale}
-              devicePixelRatio={Math.min(2, window.devicePixelRatio)}
-              renderTextLayer={true}
-              renderAnnotationLayer={true}
-              className="bg-white"
-              loading={
-                <div className="h-[800px] w-[600px] bg-white/5 animate-pulse" />
-              }
-            />
-            <div
-              className="absolute inset-0 z-10 touch-none"
-              style={{
-                cursor: tool === "none" ? "auto" : "crosshair",
-                pointerEvents: tool === "none" ? "none" : "auto",
-              }}
-              onPointerDown={(e) => handlePointerDown(e, pageNum)}
-              onPointerMove={(e) => handlePointerMove(e, pageNum)}
-              onPointerUp={(e) => handlePointerUp(e, pageNum)}
-              onPointerCancel={(e) => handlePointerUp(e, pageNum)}
-            >
-              <svg
-                className="w-full h-full pointer-events-none"
-                style={{
-                  transform: `scale(${scale})`,
-                  transformOrigin: "top left",
-                  width: `${100 / scale}%`,
-                  height: `${100 / scale}%`,
+            {isNearViewport ? (
+              <Page
+                pageNumber={pageNum}
+                scale={scale}
+                devicePixelRatio={Math.min(2, window.devicePixelRatio)}
+                renderTextLayer={true}
+                renderAnnotationLayer={true}
+                className="bg-white"
+                onLoadSuccess={(page) => {
+                  setPageSizes((prev) => {
+                    if (prev[pageNum]) return prev;
+                    return {
+                      ...prev,
+                      [pageNum]: {
+                        width: page.width || page.originalWidth,
+                        height: page.height || page.originalHeight,
+                      },
+                    };
+                  });
                 }}
+                loading={
+                  <div
+                    style={{ height: pageHeight, width: pageWidth }}
+                    className="flex flex-col items-center justify-center bg-white"
+                  >
+                    <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-2" />
+                    <p className="text-xs text-neutral-400">Loading page...</p>
+                  </div>
+                }
+              />
+            ) : (
+              <div
+                style={{ height: pageHeight, width: pageWidth }}
+                className="flex flex-col items-center justify-center bg-white/5 animate-pulse"
               >
-                {(annotations[pageNum] || []).map(renderStroke)}
-                {currentStroke &&
-                  currentStroke.points &&
-                  currentStroke.points.length > 0 &&
-                  renderStroke(currentStroke)}
-              </svg>
-            </div>
+                <p className="text-xs text-neutral-500 font-mono">
+                  Page {pageNum}
+                </p>
+              </div>
+            )}
+
+            {isNearViewport && (
+              <div
+                className="absolute inset-0 z-10 touch-none"
+                style={{
+                  cursor: tool === "none" ? "auto" : "crosshair",
+                  pointerEvents: tool === "none" ? "none" : "auto",
+                }}
+                onPointerDown={(e) => handlePointerDown(e, pageNum)}
+                onPointerMove={(e) => handlePointerMove(e, pageNum)}
+                onPointerUp={(e) => handlePointerUp(e, pageNum)}
+                onPointerCancel={(e) => handlePointerUp(e, pageNum)}
+              >
+                <svg
+                  className="w-full h-full pointer-events-none"
+                  style={{
+                    transform: `scale(${scale})`,
+                    transformOrigin: "top left",
+                    width: `${100 / scale}%`,
+                    height: `${100 / scale}%`,
+                  }}
+                >
+                  {(annotations[pageNum] || []).map(renderStroke)}
+                  {currentStroke &&
+                    currentStroke.points &&
+                    currentStroke.points.length > 0 &&
+                    renderStroke(currentStroke)}
+                </svg>
+              </div>
+            )}
           </div>
         );
       })}
@@ -1186,7 +1267,9 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
                           )}
                           style={{
                             backgroundColor:
-                              c === "#000000" && theme === "dark" ? "#000000" : c,
+                              c === "#000000" && theme === "dark"
+                                ? "#000000"
+                                : c,
                           }}
                         >
                           {c === "#000000" && (
