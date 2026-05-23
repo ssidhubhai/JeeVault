@@ -855,7 +855,7 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
             key={`page_${pageNum}`}
             ref={(el) => (pageRefs.current[index] = el)}
             data-page-number={pageNum}
-            className="mb-8 shadow-2xl bg-white relative flex items-center justify-center overflow-hidden"
+            className="mb-8 shadow-2xl bg-black relative flex items-center justify-center overflow-hidden"
             style={{ height: pageHeight, width: pageWidth }}
           >
             {isNearViewport ? (
@@ -865,7 +865,7 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
                 devicePixelRatio={Math.min(2, window.devicePixelRatio)}
                 renderTextLayer={true}
                 renderAnnotationLayer={true}
-                className="bg-white"
+                className="bg-black"
                 onLoadSuccess={(page) => {
                   setPageSizes((prev) => {
                     if (prev[pageNum]) return prev;
@@ -881,7 +881,7 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
                 loading={
                   <div
                     style={{ height: pageHeight, width: pageWidth }}
-                    className="flex flex-col items-center justify-center bg-white"
+                    className="flex flex-col items-center justify-center bg-black"
                   >
                     <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-2" />
                     <p className="text-xs text-neutral-400">Loading page...</p>
@@ -891,7 +891,7 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
             ) : (
               <div
                 style={{ height: pageHeight, width: pageWidth }}
-                className="flex flex-col items-center justify-center bg-white/5 animate-pulse"
+                className="flex flex-col items-center justify-center bg-black/40 animate-pulse"
               >
                 <p className="text-xs text-neutral-500 font-mono">
                   Page {pageNum}
@@ -1521,7 +1521,7 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
       {/* PDF Container */}
       <div
         ref={scrollContainerRef}
-        className="flex-1 relative bg-[#1e1e1e] overflow-y-auto flex flex-col items-center p-8"
+        className="flex-1 relative bg-black overflow-y-auto flex flex-col items-center p-8"
       >
         <div
           className="transition-all duration-300"
