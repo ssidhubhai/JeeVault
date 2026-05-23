@@ -297,7 +297,7 @@ export function ChapterResources({ subject, chapter, onOpenPdf }: ChapterResourc
                                   <span className="text-sm font-medium truncate group-hover:text-blue-600 transition-colors">{pdf.fileName}</span>
                                 </button>
                               </div>
-                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <div className="flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                                 <button
                                   onClick={() => onOpenPdf(pdf.id)}
                                   className="p-2 text-neutral-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"

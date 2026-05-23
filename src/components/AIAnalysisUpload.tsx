@@ -198,9 +198,9 @@ export function AIAnalysisUpload({ onAnalyzeComplete }: AIAnalysisUploadProps) {
                   )}
                   <button 
                     onClick={() => removeFile(i)}
-                    className="absolute inset-0 bg-red-500/80 text-white opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"
+                    className="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white p-1 rounded-full md:inset-0 md:bg-red-500/80 md:rounded-none opacity-100 md:opacity-0 md:group-hover:opacity-100 flex items-center justify-center transition-opacity"
                   >
-                    <X className="w-6 h-6" />
+                    <X className="w-4 h-4 md:w-6 md:h-6" />
                   </button>
                 </div>
               ))}

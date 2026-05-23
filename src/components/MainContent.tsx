@@ -601,7 +601,7 @@ export function MainContent({ selectedSubject, selectedChapter, refreshTrigger, 
                     }
                   }}
                   className={cn(
-                    "break-inside-avoid relative bg-neutral-100 dark:bg-neutral-900 rounded-xl shadow-sm border overflow-hidden transition-all duration-200 cursor-pointer mb-0 md:mb-6 md:bg-white",
+                    "group break-inside-avoid relative bg-neutral-100 dark:bg-neutral-900 rounded-xl shadow-sm border overflow-hidden transition-all duration-200 cursor-pointer mb-0 md:mb-6 md:bg-white",
                     "w-full h-[130px] md:w-auto md:h-auto",
                     isSelected 
                       ? "border-blue-500 ring-4 ring-blue-500/20 shadow-blue-500/30" 
