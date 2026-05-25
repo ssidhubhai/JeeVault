@@ -97,8 +97,12 @@ export function PasteModal({ imageUrl, queueCount = 0, onClose, onSave, initialS
       } else if (e.key === '1' && e.altKey) {
         handleSubjectChange('Physics');
       } else if (e.key === '2' && e.altKey) {
-        handleSubjectChange('Chemistry');
+        handleSubjectChange('Physical Chemistry');
       } else if (e.key === '3' && e.altKey) {
+        handleSubjectChange('Inorganic Chemistry');
+      } else if (e.key === '4' && e.altKey) {
+        handleSubjectChange('Organic Chemistry');
+      } else if (e.key === '5' && e.altKey) {
         handleSubjectChange('Mathematics');
       } else if (e.key === 'd' && e.altKey) {
         handleQuickDump();

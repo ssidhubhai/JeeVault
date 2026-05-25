@@ -458,7 +458,7 @@ export function Planner() {
                     {(provided) => (
                       <div className="space-y-2" {...provided.droppableProps} ref={provided.innerRef}>
                         {todayPlan?.tasks.map((t, index) => {
-                          // @ts-expect-error
+                          // @ts-ignore
                           return (<Draggable key={t.id} draggableId={t.id} index={index} isDragDisabled={todayPlan.locked}>
                             {(provided) => (
                               <div
@@ -597,7 +597,7 @@ export function Planner() {
                   {(provided) => (
                     <div className="space-y-2" {...provided.droppableProps} ref={provided.innerRef}>
                       {tomorrowPlan?.tasks.map((t, index) => {
-                        // @ts-expect-error
+                        // @ts-ignore
                         return (<Draggable key={t.id} draggableId={t.id} index={index}>
                           {(provided) => (
                             <div

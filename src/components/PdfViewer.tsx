@@ -49,8 +49,11 @@ import { toCanvas } from "html-to-image";
 import { PasteModal } from "./PasteModal";
 import { Subject } from "../App";
 
-// Initialize PDF.js worker
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+// Initialize PDF.js worker using native URL resolver to enforce off-thread Web Worker execution in Vite
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.mjs",
+  import.meta.url
+).toString();
 
 type Theme = "normal" | "dark" | "sepia" | "warm";
 type Tool =
@@ -76,6 +79,164 @@ interface Stroke {
   brushSize: number;
 }
 
+interface PdfPageWrapperProps {
+  pageNum: number;
+  scale: number;
+  renderScale: number;
+  pageWidth: number;
+  pageHeight: number;
+  pageSizes: { [pageNum: number]: { width: number; height: number } };
+  tool: Tool;
+  handlePointerDown: (e: React.PointerEvent<HTMLDivElement>, pageNum: number) => void;
+  handlePointerMove: (e: React.PointerEvent<HTMLDivElement>, pageNum: number) => void;
+  handlePointerUp: (e: React.PointerEvent<HTMLDivElement>, pageNum: number) => void;
+  annotations: { [page: number]: Stroke[] };
+  currentStroke: Stroke | null;
+  renderStroke: (stroke: Stroke) => React.ReactNode;
+  setPageSizes: React.Dispatch<React.SetStateAction<{ [pageNum: number]: { width: number; height: number } }>>;
+  refCallback: (el: HTMLDivElement | null) => void;
+}
+
+function PdfPageWrapper({
+  pageNum,
+  scale,
+  renderScale,
+  pageWidth,
+  pageHeight,
+  pageSizes,
+  tool,
+  handlePointerDown,
+  handlePointerMove,
+  handlePointerUp,
+  annotations,
+  currentStroke,
+  renderStroke,
+  setPageSizes,
+  refCallback,
+}: PdfPageWrapperProps) {
+  const [isVisible, setIsVisible] = useState(false);
+  const elementRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const el = elementRef.current;
+    if (!el) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          setIsVisible(entry.isIntersecting);
+        });
+      },
+      {
+        rootMargin: "350px 0px 350px 0px", // Pre-load pages ahead of scroll to prevent blank space
+        threshold: 0.01,
+      }
+    );
+
+    observer.observe(el);
+    return () => {
+      observer.unobserve(el);
+    };
+  }, []);
+
+  // Compute dimensions of original page at the target scale we are rendering right now safely
+  const renderPageWidth = pageSizes[pageNum] ? pageSizes[pageNum].width * renderScale : 595 * renderScale;
+  const renderPageHeight = pageSizes[pageNum] ? pageSizes[pageNum].height * renderScale : 842 * renderScale;
+
+  return (
+    <div
+      ref={(el) => {
+        elementRef.current = el;
+        refCallback(el);
+      }}
+      data-page-number={pageNum}
+      className="mb-8 shadow-2xl bg-black relative flex items-center justify-center overflow-hidden"
+      style={{ height: pageHeight, width: pageWidth }}
+    >
+      {isVisible ? (
+        <div
+          style={{
+            transform: `scale(${scale / renderScale})`,
+            transformOrigin: "top left",
+            width: renderPageWidth,
+            height: renderPageHeight,
+          }}
+          className="absolute top-0 left-0 transition-transform duration-100 ease-out"
+        >
+          <Page
+            pageNumber={pageNum}
+            scale={renderScale}
+            devicePixelRatio={Math.min(2, window.devicePixelRatio)}
+            renderTextLayer={true}
+            renderAnnotationLayer={true}
+            className="bg-black"
+            onLoadSuccess={(page) => {
+              setPageSizes((prev) => {
+                if (prev[pageNum]) return prev;
+                return {
+                  ...prev,
+                  [pageNum]: {
+                    width: page.width || page.originalWidth,
+                    height: page.height || page.originalHeight,
+                  },
+                };
+              });
+            }}
+            loading={
+              <div
+                style={{ height: renderPageHeight, width: renderPageWidth }}
+                className="flex flex-col items-center justify-center bg-black"
+              >
+                <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-2" />
+                <p className="text-xs text-neutral-400">Loading page...</p>
+              </div>
+            }
+          />
+        </div>
+      ) : (
+        <div
+          style={{ height: pageHeight, width: pageWidth }}
+          className="flex flex-col items-center justify-center bg-black/40 animate-pulse"
+        >
+          <p className="text-xs text-neutral-500 font-mono">
+            Page {pageNum}
+          </p>
+        </div>
+      )}
+
+      {isVisible && (
+        <div
+          className="absolute inset-0 z-10 touch-none"
+          style={{
+            cursor: tool === "none" ? "auto" : "crosshair",
+            pointerEvents: tool === "none" ? "none" : "auto",
+          }}
+          onPointerDown={(e) => handlePointerDown(e, pageNum)}
+          onPointerMove={(e) => handlePointerMove(e, pageNum)}
+          onPointerUp={(e) => handlePointerUp(e, pageNum)}
+          onPointerCancel={(e) => handlePointerUp(e, pageNum)}
+        >
+          <svg
+            className="w-full h-full pointer-events-none"
+            style={{
+              transform: `scale(${scale})`,
+              transformOrigin: "top left",
+              width: `${100 / scale}%`,
+              height: `${100 / scale}%`,
+            }}
+          >
+            {(annotations[pageNum] || []).map(renderStroke)}
+            {currentStroke &&
+              currentStroke.points &&
+              currentStroke.points.length > 0 &&
+              renderStroke(currentStroke)}
+          </svg>
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface PdfViewerProps {
   initialPdfId?: string | null;
 }
@@ -85,6 +246,15 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
   const [numPages, setNumPages] = useState<number>(0);
   const [pageNumber, setPageNumber] = useState<number>(1);
   const [scale, setScale] = useState<number>(1.2);
+  const [renderScale, setRenderScale] = useState<number>(1.2);
+
+  // Debounced scale update to avoid constant heavy re-rendering during active zoom actions
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setRenderScale(scale);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [scale]);
 
   const [theme, setTheme] = useState<Theme>("normal");
   const [isDragging, setIsDragging] = useState(false);
@@ -829,7 +999,6 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
     >
       {Array.from(new Array(numPages), (el, index) => {
         const pageNum = index + 1;
-        const isNearViewport = Math.abs(pageNum - pageNumber) <= 4;
 
         // Compute dynamic height and width using registered loaded pages, or fallback
         const pageHeight = (() => {
@@ -851,84 +1020,24 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
         })();
 
         return (
-          <div
+          <PdfPageWrapper
             key={`page_${pageNum}`}
-            ref={(el) => (pageRefs.current[index] = el)}
-            data-page-number={pageNum}
-            className="mb-8 shadow-2xl bg-black relative flex items-center justify-center overflow-hidden"
-            style={{ height: pageHeight, width: pageWidth }}
-          >
-            {isNearViewport ? (
-              <Page
-                pageNumber={pageNum}
-                scale={scale}
-                devicePixelRatio={Math.min(2, window.devicePixelRatio)}
-                renderTextLayer={true}
-                renderAnnotationLayer={true}
-                className="bg-black"
-                onLoadSuccess={(page) => {
-                  setPageSizes((prev) => {
-                    if (prev[pageNum]) return prev;
-                    return {
-                      ...prev,
-                      [pageNum]: {
-                        width: page.width || page.originalWidth,
-                        height: page.height || page.originalHeight,
-                      },
-                    };
-                  });
-                }}
-                loading={
-                  <div
-                    style={{ height: pageHeight, width: pageWidth }}
-                    className="flex flex-col items-center justify-center bg-black"
-                  >
-                    <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-2" />
-                    <p className="text-xs text-neutral-400">Loading page...</p>
-                  </div>
-                }
-              />
-            ) : (
-              <div
-                style={{ height: pageHeight, width: pageWidth }}
-                className="flex flex-col items-center justify-center bg-black/40 animate-pulse"
-              >
-                <p className="text-xs text-neutral-500 font-mono">
-                  Page {pageNum}
-                </p>
-              </div>
-            )}
-
-            {isNearViewport && (
-              <div
-                className="absolute inset-0 z-10 touch-none"
-                style={{
-                  cursor: tool === "none" ? "auto" : "crosshair",
-                  pointerEvents: tool === "none" ? "none" : "auto",
-                }}
-                onPointerDown={(e) => handlePointerDown(e, pageNum)}
-                onPointerMove={(e) => handlePointerMove(e, pageNum)}
-                onPointerUp={(e) => handlePointerUp(e, pageNum)}
-                onPointerCancel={(e) => handlePointerUp(e, pageNum)}
-              >
-                <svg
-                  className="w-full h-full pointer-events-none"
-                  style={{
-                    transform: `scale(${scale})`,
-                    transformOrigin: "top left",
-                    width: `${100 / scale}%`,
-                    height: `${100 / scale}%`,
-                  }}
-                >
-                  {(annotations[pageNum] || []).map(renderStroke)}
-                  {currentStroke &&
-                    currentStroke.points &&
-                    currentStroke.points.length > 0 &&
-                    renderStroke(currentStroke)}
-                </svg>
-              </div>
-            )}
-          </div>
+            pageNum={pageNum}
+            scale={scale}
+            renderScale={renderScale}
+            pageWidth={pageWidth}
+            pageHeight={pageHeight}
+            pageSizes={pageSizes}
+            tool={tool}
+            handlePointerDown={handlePointerDown}
+            handlePointerMove={handlePointerMove}
+            handlePointerUp={handlePointerUp}
+            annotations={annotations}
+            currentStroke={currentStroke}
+            renderStroke={renderStroke}
+            setPageSizes={setPageSizes}
+            refCallback={(el) => (pageRefs.current[index] = el)}
+          />
         );
       })}
     </Document>

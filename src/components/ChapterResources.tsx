@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Folder, Plus, File, Trash2, ExternalLink, ChevronRight, UploadCloud, Edit2, Check, X, GripVertical } from 'lucide-react';
+import { Folder, Plus, File, Trash2, ExternalLink, ChevronRight, UploadCloud, Edit2, Check, X } from 'lucide-react';
 import { getAllPdfSessions, savePdfSession, clearPdfSession, PdfSession, getChapterBoxes, saveChapterBoxes, ChapterBox } from '../lib/db';
 import { cn } from '../lib/utils';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
@@ -20,6 +20,7 @@ export function ChapterResources({ subject, chapter, onOpenPdf }: ChapterResourc
   const [editingBoxId, setEditingBoxId] = useState<string | null>(null);
   const [editBoxName, setEditBoxName] = useState('');
   const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -108,31 +109,38 @@ export function ChapterResources({ subject, chapter, onOpenPdf }: ChapterResourc
   const handleFileUpload = async (files: FileList | null, boxName: string) => {
     if (!files) return;
     
-    // Sort existing to find max order
-    const boxPdfs = resources.filter(r => r.boxName === boxName).sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0));
-    let baseOrder = boxPdfs.length > 0 ? (boxPdfs[boxPdfs.length - 1].orderIndex || 0) + 1 : 0;
+    setIsUploading(true);
+    try {
+      // Sort existing to find max order
+      const boxPdfs = resources.filter(r => r.boxName === boxName).sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0));
+      let baseOrder = boxPdfs.length > 0 ? (boxPdfs[boxPdfs.length - 1].orderIndex || 0) + 1 : 0;
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      if (file.type !== 'application/pdf') continue;
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (file.type !== 'application/pdf') continue;
 
-      const arrayBuffer = await file.arrayBuffer();
-      const newPdf: PdfSession = {
-        id: crypto.randomUUID(),
-        fileName: file.name,
-        fileData: arrayBuffer,
-        fileType: file.type,
-        pageNumber: 1,
-        subject,
-        chapter,
-        boxName,
-        orderIndex: baseOrder + i,
-        lastOpened: Date.now()
-      };
+        const arrayBuffer = await file.arrayBuffer();
+        const newPdf: PdfSession = {
+          id: crypto.randomUUID(),
+          fileName: file.name,
+          fileData: arrayBuffer,
+          fileType: file.type,
+          pageNumber: 1,
+          subject,
+          chapter,
+          boxName,
+          orderIndex: baseOrder + i,
+          lastOpened: Date.now()
+        };
 
-      await savePdfSession(newPdf);
+        await savePdfSession(newPdf);
+      }
+    } catch (err) {
+      console.error("Error uploading file:", err);
+    } finally {
+      setIsUploading(false);
+      loadData();
     }
-    loadData();
   };
 
   const handleFileDrop = (e: React.DragEvent<HTMLDivElement>, boxName: string) => {
@@ -147,6 +155,33 @@ export function ChapterResources({ subject, chapter, onOpenPdf }: ChapterResourc
     // Send to recycle bin
     await savePdfSession({ ...pdf, deletedAt: Date.now() });
     loadData();
+  };
+
+  const movePdfOrder = async (pdfId: string, direction: 'up' | 'down') => {
+    if (!activeBox) return;
+    const boxPdfs = resources.filter(r => r.boxName === activeBox.name).sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0));
+    const index = boxPdfs.findIndex(p => p.id === pdfId);
+    if (index === -1) return;
+
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= boxPdfs.length) return;
+
+    // Rearrange in array
+    const reordered = [...boxPdfs];
+    const [moved] = reordered.splice(index, 1);
+    reordered.splice(targetIndex, 0, moved);
+
+    // Update frontend state immediately
+    const updatedResources = [...resources.filter(r => r.boxName !== activeBox.name), ...reordered];
+    setResources(updatedResources);
+
+    // Persist new orders to Database
+    for (let i = 0; i < reordered.length; i++) {
+      if (reordered[i].orderIndex !== i) {
+        reordered[i].orderIndex = i;
+        await savePdfSession(reordered[i]);
+      }
+    }
   };
 
   const handleDragEnd = async (result: DropResult) => {
@@ -236,7 +271,7 @@ export function ChapterResources({ subject, chapter, onOpenPdf }: ChapterResourc
 
         <div 
           className={cn(
-            "flex-1 border-2 rounded-xl border-dashed transition-colors relative overflow-hidden",
+            "flex-1 border-2 rounded-xl border-dashed transition-colors relative overflow-hidden flex flex-col min-h-[300px]",
             isDraggingOver ? "border-blue-500 bg-blue-50 dark:bg-blue-900/10" : "border-transparent",
             boxPdfs.length === 0 ? "border-neutral-200 dark:border-neutral-800" : ""
           )}
@@ -244,6 +279,24 @@ export function ChapterResources({ subject, chapter, onOpenPdf }: ChapterResourc
           onDragLeave={() => setIsDraggingOver(false)}
           onDrop={(e) => handleFileDrop(e, activeBox.name)}
         >
+          {isUploading && (
+            <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
+              <div className="bg-white dark:bg-neutral-900 p-6 rounded-2xl shadow-2xl border border-neutral-100 dark:border-neutral-800 flex flex-col items-center max-w-sm w-full mx-4 text-center">
+                <div className="relative flex items-center justify-center mb-4">
+                  <div className="absolute w-12 h-12 rounded-full border-4 border-blue-500/20 dark:border-blue-500/10 animate-ping duration-1000" />
+                  <div className="w-12 h-12 rounded-full border-4 border-blue-500 border-t-transparent animate-spin" />
+                  <UploadCloud className="absolute w-5 h-5 text-blue-500 animate-pulse" />
+                </div>
+                <h4 className="text-sm font-bold text-neutral-800 dark:text-neutral-100">
+                  Uploading and Parsing File...
+                </h4>
+                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-1">
+                  Parsing PDF content structure into vectors.
+                </p>
+              </div>
+            </div>
+          )}
+
           {boxPdfs.length === 0 ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-6">
               <UploadCloud className="w-16 h-16 text-blue-500/50 mb-4" />
@@ -277,40 +330,38 @@ export function ChapterResources({ subject, chapter, onOpenPdf }: ChapterResourc
                             <div
                               ref={provided.innerRef}
                               {...provided.draggableProps}
+                              {...provided.dragHandleProps}
                               className={cn(
-                                "flex items-center justify-between p-3 lg:p-4 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl group transition-all",
-                                snapshot.isDragging ? "shadow-xl border-blue-500/50 rotate-1 z-50" : "hover:border-neutral-300 dark:hover:border-neutral-700"
+                                "flex items-center justify-between p-3 lg:p-4 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 rounded-xl group transition-all cursor-grab active:cursor-grabbing select-none",
+                                snapshot.isDragging ? "shadow-xl border-blue-500/50 rotate-1 scale-[1.01] z-50 bg-neutral-50 dark:bg-neutral-800" : "hover:border-neutral-300 dark:hover:border-neutral-700 hover:bg-neutral-50/50 dark:hover:bg-neutral-800/20"
                               )}
                             >
-                              <div className="flex items-center gap-3 flex-1 min-w-0">
-                                <div 
-                                  {...provided.dragHandleProps}
-                                  className="p-1 cursor-grab active:cursor-grabbing text-neutral-400 hover:text-neutral-600"
-                                >
-                                  <GripVertical className="w-5 h-5" />
-                                </div>
-                                <button
-                                  onClick={() => onOpenPdf(pdf.id)}
-                                  className="flex items-center gap-3 flex-1 min-w-0 text-left"
-                                >
-                                  <File className="w-5 h-5 text-rose-500 shrink-0" />
-                                  <span className="text-sm font-medium truncate group-hover:text-blue-600 transition-colors">{pdf.fileName}</span>
-                                </button>
+                              <div className="flex items-center gap-3 flex-1 min-w-0 pointer-events-none">
+                                <File className="w-5 h-5 text-rose-500 shrink-0" />
+                                <span className="text-sm font-medium truncate text-neutral-800 dark:text-neutral-200 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                                  {pdf.fileName}
+                                </span>
                               </div>
-                              <div className="flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                              <div className="flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity pointer-events-auto">
                                 <button
-                                  onClick={() => onOpenPdf(pdf.id)}
-                                  className="p-2 text-neutral-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onOpenPdf(pdf.id);
+                                  }}
+                                  className="p-2 text-neutral-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors cursor-pointer"
                                   title="Open PDF"
                                 >
-                                  <ExternalLink className="w-4 h-4" />
+                                  <ExternalLink className="w-4 h-4 pointer-events-none" />
                                 </button>
                                 <button
-                                  onClick={() => handleDeletePdf(pdf)}
-                                  className="p-2 text-neutral-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeletePdf(pdf);
+                                  }}
+                                  className="p-2 text-neutral-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors cursor-pointer"
                                   title="Delete PDF"
                                 >
-                                  <Trash2 className="w-4 h-4" />
+                                  <Trash2 className="w-4 h-4 pointer-events-none" />
                                 </button>
                               </div>
                             </div>
