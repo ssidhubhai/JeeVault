@@ -599,6 +599,7 @@ export interface DailyPlan {
   studyGoalHours?: number;
   notes?: string;
   locked: boolean;
+  focusSessions?: { id: string; durationMins: number; timestamp: number; isOffline?: boolean }[];
 }
 
 export const getDailyPlan = async (dateStr: string): Promise<DailyPlan | undefined> => {

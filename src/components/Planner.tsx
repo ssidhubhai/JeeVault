@@ -23,6 +23,57 @@ export function Planner() {
   const [todayPlan, setTodayPlan] = useState<DailyPlan | null>(null);
   const [tomorrowPlan, setTomorrowPlan] = useState<DailyPlan | null>(null);
   const [notes, setNotes] = useState('');
+  const [isSavingNotes, setIsSavingNotes] = useState(false);
+  
+  // Keep notes and todayPlan in refs so they are reliably available on unmount
+  const notesRef = React.useRef(notes);
+  const todayPlanRef = React.useRef(todayPlan);
+
+  useEffect(() => {
+    notesRef.current = notes;
+  }, [notes]);
+
+  useEffect(() => {
+    todayPlanRef.current = todayPlan;
+  }, [todayPlan]);
+
+  // Debounced Auto-Save for Daily Notes with 2-second interval visual status
+  useEffect(() => {
+    if (!todayPlan || todayPlan.locked) return;
+    
+    // Only trigger saving logic if notes actually changed from todayPlan's stored notes
+    if (notes === (todayPlan.notes || '')) {
+      return;
+    }
+
+    setIsSavingNotes(true);
+
+    const debounceTimer = setTimeout(async () => {
+      try {
+        const updated = { ...todayPlan, notes };
+        setTodayPlan(updated);
+        await saveDailyPlan(updated);
+        setIsSavingNotes(false);
+      } catch (err) {
+        console.error("Auto-save notes failed:", err);
+        setIsSavingNotes(false);
+      }
+    }, 2000);
+
+    return () => {
+      clearTimeout(debounceTimer);
+    };
+  }, [notes, todayPlan]);
+
+  // Guarantee user notes are never lost by flushing immediately on unmount
+  useEffect(() => {
+    return () => {
+      if (todayPlanRef.current && !todayPlanRef.current.locked && notesRef.current !== (todayPlanRef.current.notes || '')) {
+        const finalPlan = { ...todayPlanRef.current, notes: notesRef.current };
+        saveDailyPlan(finalPlan).catch(err => console.error("Flush notes on unmount failed:", err));
+      }
+    };
+  }, []);
   const [newTodayTaskText, setNewTodayTaskText] = useState('');
   const [newTodayTaskTime, setNewTodayTaskTime] = useState('');
   const [newTodayTaskRecurrence, setNewTodayTaskRecurrence] = useState<'none' | 'daily' | 'weekly' | 'monthly'>('none');
@@ -106,13 +157,8 @@ export function Planner() {
     }
   };
 
-  const handleNotesChange = async (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+  const handleNotesChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setNotes(e.target.value);
-    if (todayPlan && !todayPlan.locked) {
-      const updated = { ...todayPlan, notes: e.target.value };
-      setTodayPlan(updated);
-      await saveDailyPlan(updated);
-    }
   };
 
   const handleAddTodayTask = async (e: React.FormEvent) => {
@@ -518,7 +564,20 @@ export function Planner() {
               </div>
 
               <div>
-                <h3 className="text-sm font-bold text-neutral-500 uppercase tracking-wider mb-2">Daily Notes</h3>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-bold text-neutral-500 uppercase tracking-wider">Daily Notes</h3>
+                  {isSavingNotes ? (
+                    <span className="text-[11px] font-semibold text-amber-500 animate-pulse flex items-center gap-1">
+                      <Save className="w-3.5 h-3.5 text-amber-500 animate-spin" /> Saving...
+                    </span>
+                  ) : notes !== (todayPlan?.notes || '') ? (
+                    <span className="text-[11px] font-medium text-neutral-400">Unsaved changes...</span>
+                  ) : notes ? (
+                    <span className="text-[11px] font-bold text-emerald-500 dark:text-emerald-400 flex items-center gap-1 animate-fade-in">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 dark:text-emerald-400" /> Saved
+                    </span>
+                  ) : null}
+                </div>
                 <textarea
                   value={notes}
                   onChange={handleNotesChange}
