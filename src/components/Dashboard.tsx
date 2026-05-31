@@ -17,6 +17,10 @@ interface DashboardProps {
   refreshTrigger: number;
   onSelectSubject: (subject: Subject | null) => void;
   onSelectChapter: (chapter: string | null) => void;
+  activeSubject: Subject | null;
+  setActiveSubject: (subject: Subject | null) => void;
+  activeClass: string | null;
+  setActiveClass: (className: string | null) => void;
 }
 
 function SubjectCard({ name, icon: Icon, color, onClick }: { name: string, icon: any, color: string, onClick: () => void }) {
@@ -33,7 +37,16 @@ function SubjectCard({ name, icon: Icon, color, onClick }: { name: string, icon:
   );
 }
 
-export function Dashboard({ onViewChange, refreshTrigger, onSelectSubject, onSelectChapter }: DashboardProps) {
+export function Dashboard({ 
+  onViewChange, 
+  refreshTrigger, 
+  onSelectSubject, 
+  onSelectChapter,
+  activeSubject,
+  setActiveSubject,
+  activeClass,
+  setActiveClass
+}: DashboardProps) {
   const [stats, setStats] = useState({
     total: 0,
     solved: 0,
@@ -43,8 +56,6 @@ export function Dashboard({ onViewChange, refreshTrigger, onSelectSubject, onSel
     recycleBin: 0
   });
   const [recentPdfs, setRecentPdfs] = useState<PdfSession[]>([]);
-  const [activeSubject, setActiveSubject] = useState<Subject | null>(null);
-  const [activeClass, setActiveClass] = useState<string | null>(null);
   const [todayPlan, setTodayPlan] = useState<DailyPlan | null>(null);
 
   // Timer states with persistency support

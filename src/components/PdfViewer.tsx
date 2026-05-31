@@ -29,6 +29,7 @@ import {
   Minus,
   ArrowRight,
   Shapes,
+  Download,
 } from "lucide-react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
@@ -48,6 +49,7 @@ import { toast } from "react-hot-toast";
 import { toCanvas } from "html-to-image";
 import { PasteModal } from "./PasteModal";
 import { Subject } from "../App";
+import { jsPDF } from "jspdf";
 
 // Initialize PDF.js worker using native URL resolver to enforce off-thread Web Worker execution in Vite
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
@@ -85,25 +87,29 @@ interface PdfPageWrapperProps {
   renderScale: number;
   pageWidth: number;
   pageHeight: number;
-  pageSizes: { [pageNum: number]: { width: number; height: number } };
+  originalPageWidth: number | undefined;
+  originalPageHeight: number | undefined;
+  currentPageNumber: number;
   tool: Tool;
   handlePointerDown: (e: React.PointerEvent<HTMLDivElement>, pageNum: number) => void;
   handlePointerMove: (e: React.PointerEvent<HTMLDivElement>, pageNum: number) => void;
   handlePointerUp: (e: React.PointerEvent<HTMLDivElement>, pageNum: number) => void;
-  annotations: { [page: number]: Stroke[] };
+  annotations: Stroke[];
   currentStroke: Stroke | null;
   renderStroke: (stroke: Stroke) => React.ReactNode;
-  setPageSizes: React.Dispatch<React.SetStateAction<{ [pageNum: number]: { width: number; height: number } }>>;
+  onPageLoadSuccess: (pageNum: number, width: number, height: number) => void;
   refCallback: (el: HTMLDivElement | null) => void;
 }
 
-function PdfPageWrapper({
+const PdfPageWrapper = React.memo(function PdfPageWrapper({
   pageNum,
   scale,
   renderScale,
   pageWidth,
   pageHeight,
-  pageSizes,
+  originalPageWidth,
+  originalPageHeight,
+  currentPageNumber,
   tool,
   handlePointerDown,
   handlePointerMove,
@@ -111,24 +117,27 @@ function PdfPageWrapper({
   annotations,
   currentStroke,
   renderStroke,
-  setPageSizes,
+  onPageLoadSuccess,
   refCallback,
 }: PdfPageWrapperProps) {
-  const [isVisible, setIsVisible] = useState(false);
+  const [isIntersecting, setIsIntersecting] = useState(false);
   const elementRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const el = elementRef.current;
     if (!el) return;
 
+    const scrollParent = el.closest ? el.closest(".pdf-scroll-container") : null;
+
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
-          setIsVisible(entry.isIntersecting);
+          setIsIntersecting(entry.isIntersecting);
         });
       },
       {
-        rootMargin: "350px 0px 350px 0px", // Pre-load pages ahead of scroll to prevent blank space
+        root: scrollParent,
+        rootMargin: "500px 0px 500px 0px", // Generous but bounded pre-load buffer limits inside scroll viewport
         threshold: 0.01,
       }
     );
@@ -139,9 +148,15 @@ function PdfPageWrapper({
     };
   }, []);
 
+  // Strict proximity virtualization: Keep pages loaded if they are within 2 indices
+  // of the current active scroll position, or if they are currently inside the viewport margin.
+  // This tightly bounds active canvas memory allocation, preventing blank white/black browser canvas issues.
+  const isCloseToCurrent = Math.abs(pageNum - currentPageNumber) <= 2;
+  const shouldRender = isIntersecting || isCloseToCurrent;
+
   // Compute dimensions of original page at the target scale we are rendering right now safely
-  const renderPageWidth = pageSizes[pageNum] ? pageSizes[pageNum].width * renderScale : 595 * renderScale;
-  const renderPageHeight = pageSizes[pageNum] ? pageSizes[pageNum].height * renderScale : 842 * renderScale;
+  const renderPageWidth = (originalPageWidth || 595.28) * renderScale;
+  const renderPageHeight = (originalPageHeight || 841.89) * renderScale;
 
   return (
     <div
@@ -153,7 +168,7 @@ function PdfPageWrapper({
       className="mb-8 shadow-2xl bg-black relative flex items-center justify-center overflow-hidden"
       style={{ height: pageHeight, width: pageWidth }}
     >
-      {isVisible ? (
+      {shouldRender ? (
         <div
           style={{
             transform: `scale(${scale / renderScale})`,
@@ -171,16 +186,26 @@ function PdfPageWrapper({
             renderAnnotationLayer={true}
             className="bg-black"
             onLoadSuccess={(page) => {
-              setPageSizes((prev) => {
-                if (prev[pageNum]) return prev;
-                return {
-                  ...prev,
-                  [pageNum]: {
-                    width: page.width || page.originalWidth,
-                    height: page.height || page.originalHeight,
-                  },
-                };
-              });
+              let uWidth = 595.28;
+              let uHeight = 841.89;
+              try {
+                if (typeof page.getViewport === 'function') {
+                  const vp = page.getViewport({ scale: 1 });
+                  if (vp && typeof vp.width === 'number' && !isNaN(vp.width) && typeof vp.height === 'number' && !isNaN(vp.height)) {
+                    uWidth = vp.width;
+                    uHeight = vp.height;
+                  }
+                } else if (typeof page.originalWidth === 'number' && !isNaN(page.originalWidth)) {
+                  uWidth = page.originalWidth;
+                  uHeight = page.originalHeight;
+                } else if (typeof page.width === 'number' && !isNaN(page.width)) {
+                  uWidth = page.width;
+                  uHeight = page.height;
+                }
+              } catch (e) {
+                console.error("onLoadSuccess error:", e);
+              }
+              onPageLoadSuccess(pageNum, uWidth, uHeight);
             }}
             loading={
               <div
@@ -204,7 +229,7 @@ function PdfPageWrapper({
         </div>
       )}
 
-      {isVisible && (
+      {shouldRender && (
         <div
           className="absolute inset-0 z-10 touch-none"
           style={{
@@ -225,7 +250,7 @@ function PdfPageWrapper({
               height: `${100 / scale}%`,
             }}
           >
-            {(annotations[pageNum] || []).map(renderStroke)}
+            {annotations.map(renderStroke)}
             {currentStroke &&
               currentStroke.points &&
               currentStroke.points.length > 0 &&
@@ -235,13 +260,14 @@ function PdfPageWrapper({
       )}
     </div>
   );
-}
+});
 
 interface PdfViewerProps {
   initialPdfId?: string | null;
+  onExit?: () => void;
 }
 
-export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
+export function PdfViewer({ initialPdfId, onExit }: PdfViewerProps = {}) {
   const [file, setFile] = useState<File | null>(null);
   const [numPages, setNumPages] = useState<number>(0);
   const [pageNumber, setPageNumber] = useState<number>(1);
@@ -259,39 +285,74 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
   const [theme, setTheme] = useState<Theme>("normal");
   const [isDragging, setIsDragging] = useState(false);
   const [isFitToWidth, setIsFitToWidth] = useState(false);
-
-  const handleFitToWidth = () => {
-    if (!scrollContainerRef.current) return;
-    // Assuming a standard A4 page is roughly 595.28 points wide
-    // We get the container width, subtract some padding, and calculate the scale
-    const containerWidth = scrollContainerRef.current.clientWidth;
-    const padding = 64; // 32px padding on each side (p-8)
-    const availableWidth = containerWidth - padding;
-
-    // A standard PDF page width is around 600px at scale 1
-    const newScale = availableWidth / 600;
-
-    setScale(Math.min(Math.max(newScale, 0.5), 3));
-    setIsFitToWidth(true);
-  };
-
-  // Reset fit to width if user manually zooms
-  useEffect(() => {
-    setIsFitToWidth(false);
-  }, [scale]);
-  const [pageInput, setPageInput] = useState<string>("1");
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isLoadingSession, setIsLoadingSession] = useState(true);
-  const [recentSessions, setRecentSessions] = useState<PdfSession[]>([]);
-  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
 
   // Lazy loading state for holding original page dimensions
   const [pageSizes, setPageSizes] = useState<{
     [pageNum: number]: { width: number; height: number };
   }>({});
 
+  // Single-pass stable standard size state for unloaded pages
+  const [standardPageSize, setStandardPageSize] = useState<{ width: number; height: number } | null>(null);
+
+  const handlePageLoadSuccess = React.useCallback((pageNum: number, width: number, height: number) => {
+    if (isNaN(width) || isNaN(height) || width <= 0 || height <= 0) {
+      console.warn(`handlePageLoadSuccess: Invalid dimensions received for page ${pageNum}: width=${width}, height=${height}`);
+      return;
+    }
+    setPageSizes((prev) => {
+      if (
+        prev[pageNum] &&
+        Math.abs(prev[pageNum].width - width) < 1 &&
+        Math.abs(prev[pageNum].height - height) < 1
+      ) {
+        return prev;
+      }
+      return {
+        ...prev,
+        [pageNum]: { width, height },
+      };
+    });
+
+    setStandardPageSize((prev) => {
+      if (prev && !isNaN(prev.width) && !isNaN(prev.height)) return prev;
+      return { width, height };
+    });
+  }, []);
+
+  const handleFitToWidth = React.useCallback(() => {
+    if (!scrollContainerRef.current) return;
+    const containerWidth = scrollContainerRef.current.clientWidth;
+    const padding = 64; // 32px padding on each side (p-8)
+    const availableWidth = containerWidth - padding;
+    
+    // Use first page size or standard A4 fallback
+    const refWidth = standardPageSize?.width || 595.28;
+    const newScale = availableWidth / refWidth;
+
+    setScale(Math.min(Math.max(newScale, 0.5), 3));
+    setIsFitToWidth(true);
+  }, [standardPageSize]);
+
+  // Set manual scale and clear "Fit to Width" mode
+  const setManualScale = React.useCallback((newScale: number | ((prev: number) => number)) => {
+    setIsFitToWidth(false);
+    if (typeof newScale === "function") {
+      setScale((prev) => newScale(prev));
+    } else {
+      setScale(newScale);
+    }
+  }, []);
+
+  const [pageInput, setPageInput] = useState<string>("1");
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isLoadingSession, setIsLoadingSession] = useState(true);
+  const [recentSessions, setRecentSessions] = useState<PdfSession[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+
   useEffect(() => {
     setPageSizes({});
+    setStandardPageSize(null);
   }, [file]);
 
   // Timer State
@@ -383,9 +444,21 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
           type: fullSession.fileType,
         });
         setFile(restoredFile);
-        setPageNumber(fullSession.pageNumber);
-        initialPageRef.current = fullSession.pageNumber;
-        setPageInput(fullSession.pageNumber.toString());
+        
+        // Parse the url `page` param if present, otherwise fallback to saved page number
+        const params = new URLSearchParams(window.location.search);
+        const urlPage = params.get("page");
+        let initialPage = fullSession.pageNumber;
+        if (urlPage) {
+          const parsed = parseInt(urlPage, 10);
+          if (!isNaN(parsed) && parsed > 0) {
+            initialPage = parsed;
+          }
+        }
+
+        setPageNumber(initialPage);
+        initialPageRef.current = initialPage;
+        setPageInput(initialPage.toString());
         setScale(fullSession.scale || 1.2);
         setTheme((fullSession.theme as Theme) || "normal");
         setTimerMinutes(fullSession.timerMinutes || 60);
@@ -475,6 +548,33 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
     return () => clearTimeout(timeoutId);
   }, [annotations, currentSessionId]);
 
+  // Synchronize URL query parameters with active PDF session and page number
+  useEffect(() => {
+    if (!currentSessionId) return;
+    const url = new URL(window.location.href);
+    let changed = false;
+
+    if (url.searchParams.get("view") !== "pdf") {
+      url.searchParams.set("view", "pdf");
+      changed = true;
+    }
+
+    if (url.searchParams.get("pdfId") !== currentSessionId) {
+      url.searchParams.set("pdfId", currentSessionId);
+      changed = true;
+    }
+
+    const currentPageStr = pageNumber.toString();
+    if (url.searchParams.get("page") !== currentPageStr) {
+      url.searchParams.set("page", currentPageStr);
+      changed = true;
+    }
+
+    if (changed) {
+      window.history.replaceState({ ...window.history.state }, "", url.toString());
+    }
+  }, [currentSessionId, pageNumber]);
+
   useEffect(() => {
     let interval: NodeJS.Timeout;
     if (isTimerRunning && timeLeft > 0) {
@@ -558,10 +658,10 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
       // Zoom
       if (e.ctrlKey && e.key === "=") {
         e.preventDefault();
-        setScale((prev) => Math.min(prev + 0.2, 3));
+        setManualScale((prev) => Math.min(prev + 0.2, 3));
       } else if (e.ctrlKey && e.key === "-") {
         e.preventDefault();
-        setScale((prev) => Math.max(prev - 0.2, 0.5));
+        setManualScale((prev) => Math.max(prev - 0.2, 0.5));
       }
 
       // Alt + T: Toggle Timer
@@ -583,7 +683,7 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [file, timerMinutes, numPages]);
+  }, [file, timerMinutes, numPages, setManualScale]);
 
   // Ctrl + Scroll to Zoom
   useEffect(() => {
@@ -593,7 +693,7 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
     const handleWheel = (e: WheelEvent) => {
       if (e.ctrlKey) {
         e.preventDefault();
-        setScale((prev) => {
+        setManualScale((prev) => {
           const delta = e.deltaY < 0 ? 0.1 : -0.1;
           return Math.min(Math.max(prev + delta, 0.5), 3);
         });
@@ -602,7 +702,38 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
 
     container.addEventListener("wheel", handleWheel, { passive: false });
     return () => container.removeEventListener("wheel", handleWheel);
-  }, [file]);
+  }, [file, setManualScale]);
+
+  // Handle window resizing to fit content beautifully
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    let timeoutId: NodeJS.Timeout;
+
+    const resizeObserver = new ResizeObserver(() => {
+      // Debounce slightly to prevent lag during drag-and-resize window gestures
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        if (isFitToWidth) {
+          const containerWidth = container.clientWidth;
+          const padding = 64; // 32px padding on each side (p-8)
+          const availableWidth = containerWidth - padding;
+          
+          // Use first page size or standard A4 fallback
+          const refWidth = standardPageSize?.width || 595.28;
+          const newScale = availableWidth / refWidth;
+          setScale(Math.min(Math.max(newScale, 0.5), 3));
+        }
+      }, 50);
+    });
+
+    resizeObserver.observe(container);
+    return () => {
+      resizeObserver.disconnect();
+      clearTimeout(timeoutId);
+    };
+  }, [isFitToWidth, standardPageSize]);
 
   // Intersection Observer for Page Number
   useEffect(() => {
@@ -675,8 +806,26 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
   };
 
   const onDocumentLoadSuccess = React.useCallback(
-    ({ numPages }: { numPages: number }) => {
-      setNumPages(numPages);
+    async (pdf: any) => {
+      if (!pdf) return;
+      const totalPages = pdf.numPages || 0;
+      setNumPages(totalPages);
+
+      // Attempt to resolve page 1 dimensions early to get correct portrait/landscape fallback
+      try {
+        if (pdf && typeof pdf.getPage === "function") {
+          const firstPage = await pdf.getPage(1);
+          if (firstPage) {
+            const viewport = firstPage.getViewport({ scale: 1 });
+            if (viewport && typeof viewport.width === "number" && typeof viewport.height === "number") {
+              setStandardPageSize({ width: viewport.width, height: viewport.height });
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load first page pre-size:", err);
+      }
+
       // Use a slight delay to ensure the container is ready for scrolling
       setTimeout(() => {
         if (initialPageRef.current > 1) {
@@ -687,7 +836,7 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
     [],
   );
 
-  const handlePointerDown = (
+  const handlePointerDown = React.useCallback((
     e: React.PointerEvent<HTMLDivElement>,
     pageNum: number,
   ) => {
@@ -714,9 +863,9 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
     };
     setCurrentStroke(newStroke);
     e.currentTarget.setPointerCapture(e.pointerId);
-  };
+  }, [tool, activePopover, scale, highlightColor, penColor, highlightSize, penSize]);
 
-  const handlePointerMove = (
+  const handlePointerMove = React.useCallback((
     e: React.PointerEvent<HTMLDivElement>,
     pageNum: number,
   ) => {
@@ -741,9 +890,9 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
       }
       return { ...prev, points: [...prev.points, { x, y }] };
     });
-  };
+  }, [tool, scale, currentStroke]);
 
-  const handlePointerUp = (
+  const handlePointerUp = React.useCallback((
     e: React.PointerEvent<HTMLDivElement>,
     pageNum: number,
   ) => {
@@ -754,7 +903,7 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
       [pageNum]: [...(prev[pageNum] || []), currentStroke],
     }));
     setCurrentStroke(null);
-  };
+  }, [currentStroke]);
 
   const distSq = (v: Point, w: Point) => (v.x - w.x) ** 2 + (v.y - w.y) ** 2;
   const distToSegmentSq = (p: Point, v: Point, w: Point) => {
@@ -831,7 +980,7 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
     return false;
   };
 
-  const eraseStroke = (pageNum: number, x: number, y: number) => {
+  const eraseStroke = React.useCallback((pageNum: number, x: number, y: number) => {
     setAnnotations((prev) => {
       const pageStrokes = prev[pageNum] || [];
       const threshold = 10;
@@ -841,9 +990,9 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
       if (newStrokes.length === pageStrokes.length) return prev;
       return { ...prev, [pageNum]: newStrokes };
     });
-  };
+  }, []);
 
-  const renderStroke = (stroke: Stroke) => {
+  const renderStroke = React.useCallback((stroke: Stroke) => {
     if (stroke.points.length === 0) return null;
 
     if (
@@ -948,7 +1097,187 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
         }
       />
     );
-  };
+  }, []);
+
+  const drawStrokesOnCanvas = React.useCallback((
+    ctx: CanvasRenderingContext2D,
+    strokes: Stroke[],
+    S: number
+  ) => {
+    strokes.forEach((stroke) => {
+      if (!stroke.points || stroke.points.length === 0) return;
+
+      ctx.save();
+      
+      // Setup drawing properties
+      ctx.strokeStyle = stroke.color;
+      ctx.lineWidth = stroke.brushSize * S;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+
+      if (stroke.type === "highlight") {
+        ctx.globalAlpha = 0.45;
+      } else {
+        ctx.globalAlpha = 1.0;
+      }
+
+      if (
+        stroke.type !== "pen" &&
+        stroke.type !== "highlight" &&
+        stroke.type !== "eraser" &&
+        stroke.points.length > 1
+      ) {
+        const p1 = stroke.points[0];
+        const p2 = stroke.points[stroke.points.length - 1];
+
+        if (stroke.type === "rectangle") {
+          const x = Math.min(p1.x, p2.x) * S;
+          const y = Math.min(p1.y, p2.y) * S;
+          const w = Math.abs(p2.x - p1.x) * S;
+          const h = Math.abs(p2.y - p1.y) * S;
+          ctx.beginPath();
+          ctx.rect(x, y, w, h);
+          ctx.stroke();
+        } else if (stroke.type === "circle") {
+          const cx = ((p1.x + p2.x) / 2) * S;
+          const cy = ((p1.y + p2.y) / 2) * S;
+          const rx = (Math.abs(p2.x - p1.x) / 2) * S;
+          const ry = (Math.abs(p2.y - p1.y) / 2) * S;
+          ctx.beginPath();
+          ctx.ellipse(cx, cy, rx, ry, 0, 0, 2 * Math.PI);
+          ctx.stroke();
+        } else if (
+          stroke.type === "line" ||
+          stroke.type === "dotted-line" ||
+          stroke.type === "arrow"
+        ) {
+          ctx.beginPath();
+          ctx.moveTo(p1.x * S, p1.y * S);
+          ctx.lineTo(p2.x * S, p2.y * S);
+          if (stroke.type === "dotted-line") {
+            ctx.setLineDash([5 * S, 5 * S]);
+          }
+          ctx.stroke();
+
+          if (stroke.type === "arrow") {
+            const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+            const headSize = stroke.brushSize * S;
+            ctx.save();
+            ctx.translate(p2.x * S, p2.y * S);
+            ctx.rotate(angle);
+            ctx.beginPath();
+            ctx.moveTo(0, -headSize * 1.5);
+            ctx.lineTo(headSize * 3, 0);
+            ctx.lineTo(0, headSize * 1.5);
+            ctx.closePath();
+            ctx.fillStyle = stroke.color;
+            ctx.fill();
+            ctx.restore();
+          }
+        }
+      } else {
+        // Freehand path
+        ctx.beginPath();
+        ctx.moveTo(stroke.points[0].x * S, stroke.points[0].y * S);
+        for (let i = 1; i < stroke.points.length; i++) {
+          ctx.lineTo(stroke.points[i].x * S, stroke.points[i].y * S);
+        }
+        ctx.stroke();
+      }
+
+      ctx.restore();
+    });
+  }, []);
+
+  const handleExportPdf = React.useCallback(async () => {
+    if (!file) {
+      toast.error("No PDF file loaded to export.");
+      return;
+    }
+
+    setIsExporting(true);
+    const toastId = toast.loading("Processing pages and overlaying annotations... This may take a moment.");
+
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const loadingTask = pdfjs.getDocument({ data: arrayBuffer });
+      const pdfDoc = await loadingTask.promise;
+
+      let pdfInstance: jsPDF | null = null;
+      const exportScale = 2.0;
+
+      for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+        const page = await pdfDoc.getPage(pageNum);
+        const viewport = page.getViewport({ scale: exportScale });
+
+        const canvas = document.createElement("canvas");
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const ctx = canvas.getContext("2d");
+
+        if (!ctx) {
+          throw new Error(`Failed to initialize canvas context for page ${pageNum}`);
+        }
+
+        // Fill background with white
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Render PDF page to canvas
+        await page.render({
+          canvasContext: ctx,
+          viewport: viewport,
+          canvas: canvas,
+        }).promise;
+
+        // Overlay annotations
+        const pageStrokes = annotations[pageNum] || [];
+        drawStrokesOnCanvas(ctx, pageStrokes, exportScale);
+
+        // Convert the rendered page canvas to JPEG image data
+        const imgData = canvas.toDataURL("image/jpeg", 0.95);
+
+        // Standard PDF sizing (at scale 1.0)
+        const docWidth = viewport.width / exportScale;
+        const docHeight = viewport.height / exportScale;
+        const orientation = docWidth > docHeight ? "landscape" : "portrait";
+
+        if (!pdfInstance) {
+          pdfInstance = new jsPDF({
+            orientation,
+            unit: "pt",
+            format: [docWidth, docHeight],
+          });
+        } else {
+          pdfInstance.addPage([docWidth, docHeight], orientation);
+        }
+
+        pdfInstance.addImage(
+          imgData,
+          "JPEG",
+          0,
+          0,
+          docWidth,
+          docHeight,
+          undefined,
+          "FAST"
+        );
+      }
+
+      if (pdfInstance) {
+        const originalName = file.name.replace(/\.pdf$/i, "");
+        pdfInstance.save(`${originalName}_annotated.pdf`);
+        toast.success("Annotated PDF exported successfully!", { id: toastId });
+      } else {
+        throw new Error("Failed to compile any pages into the exported file.");
+      }
+    } catch (err) {
+      console.error("Failed to export PDF:", err);
+      toast.error(`Export failed: ${err instanceof Error ? err.message : "unknown error"}`, { id: toastId });
+    } finally {
+      setIsExporting(false);
+    }
+  }, [file, annotations, drawStrokesOnCanvas]);
 
   const formatTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
@@ -1000,24 +1329,15 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
       {Array.from(new Array(numPages), (el, index) => {
         const pageNum = index + 1;
 
-        // Compute dynamic height and width using registered loaded pages, or fallback
-        const pageHeight = (() => {
-          if (pageSizes[pageNum]) return pageSizes[pageNum].height * scale;
-          const loadedKeys = Object.keys(pageSizes);
-          if (loadedKeys.length > 0) {
-            return pageSizes[Number(loadedKeys[0])].height * scale;
-          }
-          return 842 * scale; // Standard A4 height
-        })();
+        // Compute dynamic height and width using registered loaded pages, or the stable standard fallback
+        const fallbackWidth = (standardPageSize && !isNaN(standardPageSize.width)) ? standardPageSize.width : 595.28;
+        const fallbackHeight = (standardPageSize && !isNaN(standardPageSize.height)) ? standardPageSize.height : 841.89;
 
-        const pageWidth = (() => {
-          if (pageSizes[pageNum]) return pageSizes[pageNum].width * scale;
-          const loadedKeys = Object.keys(pageSizes);
-          if (loadedKeys.length > 0) {
-            return pageSizes[Number(loadedKeys[0])].width * scale;
-          }
-          return 595 * scale; // Standard A4 width
-        })();
+        const originalW = (pageSizes[pageNum] && !isNaN(pageSizes[pageNum].width)) ? pageSizes[pageNum].width : fallbackWidth;
+        const originalH = (pageSizes[pageNum] && !isNaN(pageSizes[pageNum].height)) ? pageSizes[pageNum].height : fallbackHeight;
+
+        const pageWidth = originalW * scale;
+        const pageHeight = originalH * scale;
 
         return (
           <PdfPageWrapper
@@ -1027,15 +1347,17 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
             renderScale={renderScale}
             pageWidth={pageWidth}
             pageHeight={pageHeight}
-            pageSizes={pageSizes}
+            originalPageWidth={pageSizes[pageNum]?.width}
+            originalPageHeight={pageSizes[pageNum]?.height}
+            currentPageNumber={pageNumber}
             tool={tool}
             handlePointerDown={handlePointerDown}
             handlePointerMove={handlePointerMove}
             handlePointerUp={handlePointerUp}
-            annotations={annotations}
+            annotations={annotations[pageNum] || []}
             currentStroke={currentStroke}
             renderStroke={renderStroke}
-            setPageSizes={setPageSizes}
+            onPageLoadSuccess={handlePageLoadSuccess}
             refCallback={(el) => (pageRefs.current[index] = el)}
           />
         );
@@ -1057,14 +1379,25 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
   if (!file) {
     return (
       <div className="flex-1 flex flex-col h-full bg-neutral-50 dark:bg-neutral-950 p-6 overflow-y-auto">
-        <header className="mb-8">
-          <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <Book className="w-6 h-6 text-blue-500" />
-            Focus PDF Reader
-          </h2>
-          <p className="text-sm text-neutral-500 dark:text-neutral-400">
-            Eye-friendly PDF viewer with built-in timer. No more Chrome blocks.
-          </p>
+        <header className="mb-8 flex justify-between items-start">
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+              <Book className="w-6 h-6 text-blue-500" />
+              Focus PDF Reader
+            </h2>
+            <p className="text-sm text-neutral-500 dark:text-neutral-400">
+              Eye-friendly PDF viewer with built-in timer. No more Chrome blocks.
+            </p>
+          </div>
+          {onExit && (
+            <button
+              onClick={onExit}
+              className="px-3.5 py-1.5 border border-neutral-200 dark:border-neutral-800 hover:bg-neutral-100 dark:hover:bg-neutral-900 text-neutral-700 dark:text-neutral-300 font-bold rounded-lg transition-all flex items-center gap-2 shadow-sm text-sm"
+            >
+              <X className="w-4 h-4 text-neutral-500" />
+              <span>Exit Reader</span>
+            </button>
+          )}
         </header>
 
         <div className="max-w-4xl mx-auto w-full flex flex-col gap-8">
@@ -1161,6 +1494,16 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
       {/* Top Toolbar */}
       <div className="h-14 bg-neutral-950 border-b border-neutral-800 flex items-center justify-between px-2 sm:px-4 shrink-0 relative z-50 shadow-md">
         <div className="flex items-center gap-2 sm:gap-4 flex-1">
+          {onExit && (
+            <button
+              onClick={onExit}
+              className="p-1.5 text-neutral-400 hover:text-white hover:bg-neutral-900 border border-transparent hover:border-neutral-800 rounded-lg transition-all flex items-center gap-1.5 focus:outline-none"
+              title="Exit PDF Reader"
+            >
+              <X className="w-5 h-5 text-neutral-400 hover:text-red-500 transition-colors" />
+              <span className="text-xs font-bold px-0.5 hidden sm:inline">Exit</span>
+            </button>
+          )}
           {/* Snip Action */}
           <button
             onClick={() => {
@@ -1174,6 +1517,24 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
             <Scissors className="w-4 h-4" />
             <span className="text-xs font-bold px-1 hidden sm:inline">
               Snip
+            </span>
+          </button>
+
+          {/* Export Action */}
+          <button
+            onClick={handleExportPdf}
+            disabled={isExporting}
+            className={cn(
+              "p-1.5 rounded-lg transition-colors flex items-center gap-1.5 border font-semibold",
+              isExporting
+                ? "bg-neutral-800 border-neutral-700 text-neutral-500 cursor-not-allowed"
+                : "text-emerald-400 hover:text-emerald-300 bg-emerald-900/20 hover:bg-emerald-900/30 border-emerald-900/50"
+            )}
+            title="Export PDF with drawings"
+          >
+            <Download className={cn("w-4 h-4", isExporting && "animate-bounce")} />
+            <span className="text-xs font-bold px-1 hidden sm:inline">
+              {isExporting ? "Exporting..." : "Export"}
             </span>
           </button>
 
@@ -1469,7 +1830,7 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
           {/* Zoom Controls */}
           <div className="hidden lg:flex items-center gap-1 bg-neutral-900 p-1 rounded-lg border border-neutral-800">
             <button
-              onClick={() => setScale((prev) => Math.max(prev - 0.2, 0.5))}
+              onClick={() => setManualScale((prev) => Math.max(prev - 0.2, 0.5))}
               className="p-1 text-neutral-400 hover:text-white"
             >
               <ZoomOut className="w-4 h-4" />
@@ -1478,7 +1839,7 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
               {Math.round(scale * 100)}%
             </span>
             <button
-              onClick={() => setScale((prev) => Math.min(prev + 0.2, 3))}
+              onClick={() => setManualScale((prev) => Math.min(prev + 0.2, 3))}
               className="p-1 text-neutral-400 hover:text-white"
             >
               <ZoomIn className="w-4 h-4" />
@@ -1560,7 +1921,7 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
                       max="300"
                       step="10"
                       value={scale * 100}
-                      onChange={(e) => setScale(parseInt(e.target.value) / 100)}
+                      onChange={(e) => setManualScale(parseInt(e.target.value) / 100)}
                       className="flex-1 accent-blue-500"
                     />
                     <span className="text-xs text-neutral-300 w-8">
@@ -1630,7 +1991,7 @@ export function PdfViewer({ initialPdfId }: PdfViewerProps = {}) {
       {/* PDF Container */}
       <div
         ref={scrollContainerRef}
-        className="flex-1 relative bg-black overflow-y-auto flex flex-col items-center p-8"
+        className="flex-1 relative bg-black overflow-y-auto flex flex-col items-center p-8 pdf-scroll-container"
       >
         <div
           className="transition-all duration-300"

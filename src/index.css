@@ -9,3 +9,15 @@
     scrollbar-width: none;
   }
 }
+
+/* Custom overrides for react-pdf to prevent white flashing and support dark styling */
+.react-pdf__Page {
+  background-color: transparent !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.react-pdf__Page__canvas {
+  background-color: transparent !important;
+}

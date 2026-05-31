@@ -28,6 +28,8 @@ export default function App() {
   const [currentView, setCurrentView] = useState<ViewState>('dashboard');
   const [selectedSubject, setSelectedSubject] = useState<Subject | null>(null);
   const [selectedChapter, setSelectedChapter] = useState<string | null>(null);
+  const [dashboardSubject, setDashboardSubject] = useState<Subject | null>(null);
+  const [dashboardClass, setDashboardClass] = useState<string | null>(null);
   const [pastedImage, setPastedImage] = useState<string | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -40,13 +42,79 @@ export default function App() {
       if (tags.length > 0) setUserTags(tags);
     });
 
-    const params = new URLSearchParams(window.location.search);
-    const pdfId = params.get('pdfId');
-    if (pdfId) {
-      setActivePdfId(pdfId);
-      setCurrentView('pdf');
-    }
+    const parseUrlParams = () => {
+      const params = new URLSearchParams(window.location.search);
+      const view = params.get('view') as ViewState | null;
+      const subject = params.get('subject') as Subject | null;
+      const chapter = params.get('chapter');
+      const dashSub = params.get('dashSubject') as Subject | null;
+      const dashCls = params.get('dashClass');
+      const pdfId = params.get('pdfId');
+
+      if (view) setCurrentView(view);
+      if (subject) setSelectedSubject(subject);
+      if (chapter) setSelectedChapter(chapter);
+      if (dashSub) setDashboardSubject(dashSub);
+      if (dashCls) setDashboardClass(dashCls);
+      if (pdfId) {
+        setActivePdfId(pdfId);
+        setCurrentView('pdf');
+      }
+    };
+
+    parseUrlParams();
+
+    const handlePopState = () => {
+      parseUrlParams();
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
   }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams();
+    params.set('view', currentView);
+
+    if (currentView === 'vault') {
+      if (selectedSubject) params.set('subject', selectedSubject);
+      if (selectedChapter) params.set('chapter', selectedChapter);
+    } else if (currentView === 'dashboard') {
+      if (dashboardSubject) params.set('dashSubject', dashboardSubject);
+      if (dashboardClass) params.set('dashClass', dashboardClass);
+    } else if (currentView === 'pdf') {
+      if (activePdfId) {
+        params.set('pdfId', activePdfId);
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlPage = urlParams.get('page');
+        if (urlPage) {
+          params.set('page', urlPage);
+        }
+      }
+    }
+
+    const newQueryStr = params.toString();
+    const newUrl = newQueryStr ? `?${newQueryStr}` : '';
+    const currentSearch = window.location.search;
+
+    if (currentSearch !== newUrl) {
+      const oldParams = new URLSearchParams(currentSearch);
+      const isMajor = 
+        oldParams.get('view') !== currentView ||
+        oldParams.get('subject') !== selectedSubject ||
+        oldParams.get('chapter') !== selectedChapter ||
+        oldParams.get('dashSubject') !== dashboardSubject ||
+        oldParams.get('dashClass') !== dashboardClass;
+
+      if (isMajor && currentSearch !== '') {
+        window.history.pushState({ ...window.history.state }, '', newUrl || window.location.pathname);
+      } else {
+        window.history.replaceState({ ...window.history.state }, '', newUrl || window.location.pathname);
+      }
+    }
+  }, [currentView, selectedSubject, selectedChapter, dashboardSubject, dashboardClass, activePdfId]);
 
   const [pastedImages, setPastedImages] = useState<string[]>([]);
   const [currentPasteIndex, setCurrentPasteIndex] = useState(0);
@@ -304,6 +372,10 @@ export default function App() {
               refreshTrigger={refreshTrigger} 
               onSelectSubject={setSelectedSubject}
               onSelectChapter={setSelectedChapter}
+              activeSubject={dashboardSubject}
+              setActiveSubject={setDashboardSubject}
+              activeClass={dashboardClass}
+              setActiveClass={setDashboardClass}
             />
           )}
           {currentView === 'planner' && <Planner />}
@@ -319,7 +391,19 @@ export default function App() {
           {currentView === 'flashcards' && <Flashcards />}
           {currentView === 'inbox' && <Inbox refreshTrigger={refreshTrigger} onRefresh={() => setRefreshTrigger(prev => prev + 1)} availableTags={userTags} />}
           {currentView === 'mocktest' && <MockTest />}
-          {currentView === 'pdf' && <PdfViewer initialPdfId={activePdfId} />}
+          {currentView === 'pdf' && (
+            <PdfViewer 
+              initialPdfId={activePdfId} 
+              onExit={() => {
+                setActivePdfId(null);
+                const url = new URL(window.location.href);
+                url.searchParams.delete('pdfId');
+                url.searchParams.delete('page');
+                window.history.replaceState({ ...window.history.state }, '', url.toString());
+                setCurrentView('dashboard');
+              }}
+            />
+          )}
           {currentView === 'storage' && <StorageManager />}
           {currentView === 'recycle-bin' && <RecycleBin refreshTrigger={refreshTrigger} onRefresh={() => setRefreshTrigger(prev => prev + 1)} />}
           {currentView === 'syllabus' && <SyllabusTracker />}
